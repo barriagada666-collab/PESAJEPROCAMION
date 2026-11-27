@@ -1,6 +1,6 @@
 ; ============================================================================
 ; PesajeProCamion - Script de Instalador Inno Setup 7
-; Versión: 2.2.1 | Plataforma: .NET 10 Windows Desktop (x64) + Firebird SQL
+; Versión: 2.3.0 | Plataforma: .NET 10 Windows Desktop (x64) + Firebird SQL
 ; ============================================================================
 
 #ifndef PublishDir
@@ -8,7 +8,7 @@
 #endif
 
 #ifndef AppVersion
-  #define AppVersion "2.2.1"
+  #define AppVersion "2.3.0"
 #endif
 
 [Setup]
@@ -38,11 +38,11 @@ CloseApplications=force
 RestartApplications=no
 UninstallDisplayIcon={app}\PesajeProCamion.App.exe
 UninstallDisplayName=PesajeProCamion - Sistema de Pesaje de Camiones
-VersionInfoVersion=2.2.1.0
+VersionInfoVersion=2.3.0.0
 VersionInfoCompany=PesajeProCamion
 VersionInfoDescription=Instalador del Sistema de Pesaje de Camiones
 VersionInfoProductName=PesajeProCamion
-VersionInfoProductVersion=2.2.1.0
+VersionInfoProductVersion=2.3.0.0
 InfoBeforeFile=..\CHANGELOG.md
 
 [Languages]

@@ -64,6 +64,7 @@ public sealed class UiSmokeAndAuditTests
                     Bruto = 28000,
                     Tara = 11000,
                     Neto = 17000,
+                    Fardos = 51,
                     FechaIngreso = DateTime.Today,
                     HoraIngreso = "08:00",
                     FechaSalida = DateTime.Today,
@@ -97,6 +98,7 @@ public sealed class UiSmokeAndAuditTests
                     new ChoferesForm(services),
                     new TransportistasForm(services),
                     new PesajeMopForm(services),
+                    new CatalogLookupDialog<Camion>("Buscar Camión", [], c => c.Patente, ("Patente", c => c.Patente, 100)),
                     new MainShellForm(services),
                     new PesajeWorkspaceControl(services),
                     new GestionPesajesControl(services),
@@ -172,9 +174,7 @@ public sealed class UiSmokeAndAuditTests
                 Assert.True(btn.Width >= neededW, $"Botón recortado '{btn.Text}': Width={btn.Width} < Needed={neededW}");
             }
         }
-        else if (root is DataGridView dgv &&
-                 (string.Equals(dgv.Name, "_detalleBiGrid", StringComparison.Ordinal) ||
-                  root.FindForm() is UsuariosForm))
+        else if (root is DataGridView dgv)
         {
             Assert.NotNull(dgv.ContextMenuStrip);
         }

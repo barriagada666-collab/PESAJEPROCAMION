@@ -282,6 +282,13 @@ public sealed class MainShellForm : Form
 
     private void ShowCatalog(Func<Form> factory)
     {
+        if (_services.UsuarioActual is not { Activo: true } u ||
+            (!PermissionService.EstaAutorizado(u, AccionAutorizacion.IngresarPesaje) &&
+             !PermissionService.EstaAutorizado(u, AccionAutorizacion.IngresarGestion)))
+        {
+            MessageBox.Show(this, "No posee permisos suficientes para acceder al catálogo.", "Acceso Denegado", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         using Form dlg = factory();
         dlg.ShowDialog(this);
     }

@@ -453,18 +453,22 @@ public static class Ods9Migrator
                 pat = "SINPAT";
             }
 
+            string obs1 = Str(r, "OBSERVA1", 120);
+            string obs2 = Str(r, "OBSERVA2", 120);
+            int fardos = NInt(r, "FARDOS") ?? Domain.Entities.TicketCustomizationHelper.ExtractFardosFromObservacion(obs1, obs2);
+
             await ExecAsync(conn, tx, """
                 INSERT INTO DBPESAJES (
                     FLPESAJE, PATENTE, ACOPLADO, FLPESAJEMOP, PRODUCTO, CLIENTE, ORIGEN, DESTINO, GDESPACHO,
                     NETOINF, FECHAING, HORAING, FECHASAL, HORASAL, FECHAMOD, HORAMOD,
                     BRUTO, TARA, NETO, TMOP, LARGO, MAXBRUTO, ESTADOMOP, CHOFER, TRASPASO,
-                    OBSERVA1, OBSERVA2, TRANSP, TARAREG, TPESAJE, SAVEDTOSERVER,
+                    OBSERVA1, OBSERVA2, FARDOS, TRANSP, TARAREG, TPESAJE, SAVEDTOSERVER,
                     USUAING, USUASAL, USUAMOD, USUADEL, ANULADO)
                 VALUES (
                     @FP, @PAT, @ACO, @FM, @PR, @CL, @OR, @DE, @GD,
                     @NI, @FI, @HI, @FS, @HS, @FMOD, @HMOD,
                     @BR, @TA, @NE, @TM, @LA, @MB, @EM, @CH, @TRS,
-                    @OB1, @OB2, @TR, @TRG, @TP, @SV,
+                    @OB1, @OB2, @FAR, @TR, @TRG, @TP, @SV,
                     @UI, @US, @UM, @UD, @AN)
                 """,
                 [
@@ -478,7 +482,7 @@ public static class Ods9Migrator
                     ("@BR", Int(r, "BRUTO")), ("@TA", Int(r, "TARA")), ("@NE", Int(r, "NETO")),
                     ("@TM", Sh(r, "TMOP")), ("@LA", Sh(r, "LARGO")), ("@MB", Int(r, "MAXBRUTO")),
                     ("@EM", Flag(r, "ESTADOMOP", "0")), ("@CH", Str(r, "CHOFER", 35)), ("@TRS", NStr(r, "TRASPASO", 10)),
-                    ("@OB1", Str(r, "OBSERVA1", 120)), ("@OB2", Str(r, "OBSERVA2", 120)),
+                    ("@OB1", obs1), ("@OB2", obs2), ("@FAR", fardos),
                     ("@TR", Str(r, "TRANSP", 10)), ("@TRG", Flag(r, "TARAREG", "0")),
                     ("@TP", Sh(r, "TPESAJE", 1)), ("@SV", NStr(r, "SAVEDTOSERVER", 1)),
                     ("@UI", Sh(r, "USUAING")), ("@US", Sh(r, "USUASAL")), ("@UM", Sh(r, "USUAMOD")),
@@ -500,15 +504,17 @@ public static class Ods9Migrator
                 continue;
             }
             trCount++;
+            string trObs1 = Str(r, "OBSERVA1", 120);
+            int trFardos = NInt(r, "FARDOS") ?? Domain.Entities.TicketCustomizationHelper.ExtractFardosFromObservacion(trObs1, null);
             await ExecAsync(conn, tx, """
                 INSERT INTO DBTRANSITO (
                     FLPESAJE, PATENTE, ACOPLADO, PRODUCTO, CLIENTE, ORIGEN, DESTINO, GDESPACHO,
                     NETOINF, FECHAING, HORAING, BRUTO, TARA, TMOP, LARGO, MAXBRUTO, CHOFER,
-                    OBSERVA1, TRANSP, TPESAJE, SAVEDTOSERVER, USUAING, TRASPASO)
+                    OBSERVA1, FARDOS, TRANSP, TPESAJE, SAVEDTOSERVER, USUAING, TRASPASO)
                 VALUES (
                     @FP, @PAT, @ACO, @PR, @CL, @OR, @DE, @GD,
                     @NI, @FI, @HI, @BR, @TA, @TM, @LA, @MB, @CH,
-                    @OB1, @TR, @TP, @SV, @UI, @TRS)
+                    @OB1, @FAR, @TR, @TP, @SV, @UI, @TRS)
                 """,
                 [
                     ("@FP", folio.Value), ("@PAT", ChileanValidators.NormalizarPatente(Str(r, "PATENTE", 8))),
@@ -519,7 +525,7 @@ public static class Ods9Migrator
                     ("@FI", Dt(r, "FECHAING") ?? DateTime.Today), ("@HI", Str(r, "HORAING", 5)),
                     ("@BR", Int(r, "BRUTO")), ("@TA", Int(r, "TARA")),
                     ("@TM", Sh(r, "TMOP")), ("@LA", Sh(r, "LARGO")), ("@MB", Int(r, "MAXBRUTO")),
-                    ("@CH", Str(r, "CHOFER", 35)), ("@OB1", Str(r, "OBSERVA1", 120)),
+                    ("@CH", Str(r, "CHOFER", 35)), ("@OB1", trObs1), ("@FAR", trFardos),
                     ("@TR", Str(r, "TRANSP", 10)), ("@TP", Sh(r, "TPESAJE", 1)),
                     ("@SV", NStr(r, "SAVEDTOSERVER", 1)), ("@UI", Sh(r, "USUAING")), ("@TRS", NStr(r, "TRASPASO", 10))
                 ], ct).ConfigureAwait(false);

@@ -192,6 +192,7 @@ public sealed class HardwareAndExportTests
                 MostrarGuiaDespacho = true
             };
             Pesaje sampleCustom = rows[0];
+            sampleCustom.Fardos = 51;
             sampleCustom.TipoPesaje = TipoPesaje.Despacho;
             TicketPrinterService.ExportCommercialTicketToPdf(
                 ticketPdf,
@@ -202,9 +203,75 @@ public sealed class HardwareAndExportTests
             Assert.StartsWith("%PDF-1.4", ticketBytes, StringComparison.Ordinal);
             Assert.Contains("TICKET DE PESAJE COMERCIAL", ticketBytes, StringComparison.Ordinal);
             Assert.Contains("DESPACHO DE CARGA", ticketBytes, StringComparison.Ordinal);
+            Assert.Contains("Folio: 001001", ticketBytes, StringComparison.Ordinal);
             Assert.DoesNotContain("ORIGEN / PROVEEDOR:", ticketBytes, StringComparison.Ordinal);
             Assert.DoesNotContain("TRANSPORTISTA:", ticketBytes, StringComparison.Ordinal);
             Assert.Contains("%%EOF", ticketBytes, StringComparison.Ordinal);
+
+            // Visibility toggles for Estado & Fardos across PDF, Text & XLSX
+            var hiddenEstadoFardos = new TicketFieldVisibility
+            {
+                MostrarEstado = false,
+                MostrarFardos = false,
+                MostrarPatente = true,
+                MostrarCliente = true,
+                MostrarProducto = true
+            };
+            string rawNoEstNoFardos = TicketPrinterService.BuildRawTicketText(
+                sampleCustom,
+                new BasculaInfo { NombreEmpresa = "CAMBIASO HNOS" },
+                visibility: hiddenEstadoFardos);
+            Assert.Contains("N° Folio: 001001", rawNoEstNoFardos, StringComparison.Ordinal);
+            Assert.DoesNotContain("ESTADO:", rawNoEstNoFardos, StringComparison.Ordinal);
+            Assert.DoesNotContain("CANTIDAD DE FARDOS:", rawNoEstNoFardos, StringComparison.Ordinal);
+
+            string rawWithAll = TicketPrinterService.BuildRawTicketText(
+                sampleCustom,
+                new BasculaInfo { NombreEmpresa = "CAMBIASO HNOS" },
+                visibility: new TicketFieldVisibility { MostrarEstado = true, MostrarFardos = true });
+            Assert.Contains("ESTADO:", rawWithAll, StringComparison.Ordinal);
+            Assert.Contains("CANTIDAD DE FARDOS  : 51", rawWithAll, StringComparison.Ordinal);
+
+            string ticketXlsx = Path.Combine(tmpDir, "ticket_1001.xlsx");
+            TicketPrinterService.ExportCommercialTicketToXlsx(
+                ticketXlsx,
+                sampleCustom,
+                new BasculaInfo { NombreEmpresa = "CAMBIASO HNOS", Direccion = "PLACILLA", Rut = "1-9" },
+                visibility: new TicketFieldVisibility { MostrarEstado = true, MostrarFardos = true });
+            using (ZipArchive tZip = ZipFile.OpenRead(ticketXlsx))
+            {
+                ZipArchiveEntry? sh = tZip.GetEntry("xl/worksheets/sheet1.xml");
+                Assert.NotNull(sh);
+                using var sr = new StreamReader(sh.Open());
+                string sheetXml = sr.ReadToEnd();
+                Assert.Contains("001001", sheetXml, StringComparison.Ordinal);
+                Assert.Contains("DESPACHO DE CARGA", sheetXml, StringComparison.Ordinal);
+                Assert.Contains("CANTIDAD DE FARDOS", sheetXml, StringComparison.Ordinal);
+                Assert.Contains("PESO NETO", sheetXml, StringComparison.Ordinal);
+            }
+
+            string stdRepXlsx = Path.Combine(tmpDir, "std_report.xlsx");
+            var stdRep = new StandardTableReport
+            {
+                Title = "REPORTE ESTANDAR V23",
+                Subtitle = "Filtro prueba",
+                SheetName = "Pesajes",
+                Headers = ["N° Folio", "Patente", "Fardos", "Bruto (kg)", "Tara (kg)", "Neto (kg)"],
+                Rows = [[1001, "CHHW80", 51, 28000, 12000, 16000]],
+                TotalsRow = ["TOTAL", string.Empty, 51, 28000, 12000, 16000],
+                FolioColumnIndex = 0,
+                BoldHighlightColumnIndices = new HashSet<int> { 5 }
+            };
+            DataExporter.ExportStandardReportToXlsx(stdRepXlsx, stdRep);
+            using (ZipArchive rZip = ZipFile.OpenRead(stdRepXlsx))
+            {
+                using var wbSr = new StreamReader(rZip.GetEntry("xl/workbook.xml")!.Open());
+                Assert.Contains("_xlnm.Print_Titles", wbSr.ReadToEnd(), StringComparison.Ordinal);
+                using var stSr = new StreamReader(rZip.GetEntry("xl/styles.xml")!.Open());
+                Assert.Contains("000000", stSr.ReadToEnd(), StringComparison.Ordinal);
+            }
+            using var printDoc = TicketPrinterService.CreateStandardReportDocument(stdRep);
+            Assert.NotNull(printDoc);
 
             string rawHidden = TicketPrinterService.BuildRawTicketText(
                 sampleCustom,

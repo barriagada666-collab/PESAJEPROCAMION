@@ -29,6 +29,7 @@ public static class FirebirdSchemaManager
 
         await EnsureSequencesAsync(conn, ct).ConfigureAwait(false);
         await EnsureTablesAsync(conn, ct).ConfigureAwait(false);
+        await EnsureAdditionalColumnsAsync(conn, ct).ConfigureAwait(false);
         await EnsureIndexesAsync(conn, ct).ConfigureAwait(false);
         await EnsureSeedDefaultsAsync(conn, ct).ConfigureAwait(false);
         Infrastructure.DatabaseSessionFactory.InvalidateCapabilitiesCache();
@@ -314,6 +315,7 @@ public static class FirebirdSchemaManager
                     MAXBRUTO INTEGER DEFAULT 0,
                     CHOFER VARCHAR(35),
                     OBSERVA1 VARCHAR(120),
+                    FARDOS INTEGER DEFAULT 0,
                     TRANSP VARCHAR(10),
                     TPESAJE SMALLINT DEFAULT 1 NOT NULL,
                     SAVEDTOSERVER CHAR(1),
@@ -340,6 +342,7 @@ public static class FirebirdSchemaManager
                     MAXBRUTO INTEGER DEFAULT 0,
                     OBSERVA VARCHAR(120),
                     CHOFER VARCHAR(35),
+                    FARDOS INTEGER DEFAULT 0,
                     TRANSP VARCHAR(10),
                     USUAING SMALLINT DEFAULT 0,
                     FECHAANUL DATE,
@@ -377,6 +380,7 @@ public static class FirebirdSchemaManager
                     TRASPASO VARCHAR(10),
                     OBSERVA1 VARCHAR(120),
                     OBSERVA2 VARCHAR(120),
+                    FARDOS INTEGER DEFAULT 0,
                     TRANSP VARCHAR(10),
                     TARAREG CHAR(1) DEFAULT '0',
                     TPESAJE SMALLINT DEFAULT 1 NOT NULL,
@@ -516,6 +520,28 @@ public static class FirebirdSchemaManager
             if (exists == 0)
             {
                 await ExecuteDdlAsync(conn, ddl, ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task EnsureAdditionalColumnsAsync(FbConnection conn, CancellationToken ct)
+    {
+        (string Table, string Column, string ColumnDef)[] extraCols =
+        [
+            ("DBTRANSITO", "FARDOS", "INTEGER DEFAULT 0"),
+            ("DBTRAN_ANUL", "FARDOS", "INTEGER DEFAULT 0"),
+            ("DBPESAJES", "FARDOS", "INTEGER DEFAULT 0")
+        ];
+
+        foreach ((string table, string col, string colDef) in extraCols)
+        {
+            await using var check = new FbCommand("SELECT COUNT(*) FROM RDB$RELATION_FIELDS WHERE TRIM(RDB$RELATION_NAME) = @T AND TRIM(RDB$FIELD_NAME) = @C", conn);
+            check.Parameters.AddWithValue("@T", table);
+            check.Parameters.AddWithValue("@C", col);
+            int exists = Convert.ToInt32(await check.ExecuteScalarAsync(ct).ConfigureAwait(false), System.Globalization.CultureInfo.InvariantCulture);
+            if (exists == 0)
+            {
+                await ExecuteDdlAsync(conn, $"ALTER TABLE {table} ADD {col} {colDef}", ct).ConfigureAwait(false);
             }
         }
     }

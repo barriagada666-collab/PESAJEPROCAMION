@@ -81,35 +81,25 @@ public sealed class CatalogLookupDialog<T> : Form
                 ConfirmSelection();
             }
         };
-        _grid.CellMouseDown += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Right && e.RowIndex >= 0)
-            {
-                _grid.ClearSelection();
-                _grid.Rows[e.RowIndex].Selected = true;
-                _grid.CurrentCell = _grid.Rows[e.RowIndex].Cells[Math.Max(0, e.ColumnIndex)];
-            }
-        };
-
-        var cms = new ContextMenuStrip();
-        AppTheme.StyleContextMenu(cms);
-        var mSel = new ToolStripMenuItem("Seleccionar Registro", IconCatalog.Get(AppIcon.Check, 16, AppTheme.AccentEmerald));
-        mSel.Click += (_, _) => ConfirmSelection();
-        var mCopyCell = new ToolStripMenuItem("Copiar Celda", IconCatalog.Get(AppIcon.Copy, 16, AppTheme.NavyPrimary));
-        mCopyCell.Click += (_, _) =>
-        {
-            string val = _grid.CurrentCell?.Value?.ToString() ?? string.Empty;
-            if (!string.IsNullOrEmpty(val)) Clipboard.SetText(val);
-        };
-        var mCopyRow = new ToolStripMenuItem("Copiar Fila Completa", IconCatalog.Get(AppIcon.Duplicate, 16, AppTheme.NavyDark));
-        mCopyRow.Click += (_, _) =>
-        {
-            if (_grid.CurrentRow is null) return;
-            string line = string.Join(" | ", _grid.CurrentRow.Cells.Cast<DataGridViewCell>().Select(c => c.Value?.ToString() ?? string.Empty));
-            if (!string.IsNullOrWhiteSpace(line)) Clipboard.SetText(line);
-        };
-        cms.Items.AddRange([mSel, new ToolStripSeparator(), mCopyCell, mCopyRow]);
-        _grid.ContextMenuStrip = cms;
+        UniversalContextMenuService.AttachToGrid(
+            _grid,
+            () => null,
+            customActions:
+            [
+                new ContextActionSpec
+                {
+                    Text = "Seleccionar Registro",
+                    Icon = AppIcon.Check,
+                    IconTint = AppTheme.AccentEmerald,
+                    Group = 10,
+                    RequiresRow = true,
+                    ExecuteAsync = _ => { ConfirmSelection(); return Task.CompletedTask; }
+                }
+            ],
+            exportTitle: title.ToUpperInvariant(),
+            sheetName: "Catalogo",
+            refreshAsync: () => { ApplyFilter(); return Task.CompletedTask; },
+            allowPrint: false);
 
         _columnSelectors = columns.Select(c => c.ValueSelector).ToArray();
         Controls.AddRange([_grid, top]);

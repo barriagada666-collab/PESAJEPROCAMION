@@ -370,19 +370,24 @@ public sealed class WorkflowAndRegressionTests
             List<RegistroTransitoAnulado> anulados = await weighing.GetTransitoAnuladoAsync(DateTime.Today.AddDays(-1), DateTime.Today.AddDays(1));
             Assert.Contains(anulados, a => a.FolioPesaje == fTr);
 
-            // 4. Crear y dividir ticket en DB legacy respetando longitudes de OBSERVA1/OBSERVA2 (50)
+            // 4. Crear y dividir ticket en DB legacy respetando longitudes de OBSERVA1/OBSERVA2 (50) + Fardos
             int f1 = await weighing.CreateManualTicketAsync(new Pesaje
             {
                 Patente = "LEG456",
                 Bruto = 20,
                 Tara = 10,
                 Neto = 10,
+                Fardos = 51,
                 FechaIngreso = DateTime.Today,
                 HoraIngreso = "13:15",
                 FechaSalida = DateTime.Today,
                 HoraSalida = "13:20",
                 Observacion1 = new string('O', 90)
             }, crearEnProceso: false, logged.Id, preserveManualNeto: true);
+
+            Pesaje? legacyCreated = await weighing.GetPesajePorFolioAsync(f1);
+            Assert.NotNull(legacyCreated);
+            Assert.Equal(51, legacyCreated.Fardos);
 
             TicketSplitResult split = await weighing.SplitTicketAsync(new TicketSplitRequest
             {
@@ -392,10 +397,114 @@ public sealed class WorkflowAndRegressionTests
                 BrutoParte1 = 16,
                 TaraParte1 = 10,
                 BrutoParte2 = 14,
-                TaraParte2 = 10
+                TaraParte2 = 10,
+                FardosParte1 = 31,
+                FardosParte2 = 20
             }, logged.Id);
             Assert.Equal(6, (await weighing.GetPesajePorFolioAsync(split.OriginalFolio))!.Neto);
             Assert.Equal(4, (await weighing.GetPesajePorFolioAsync(split.NewFolio))!.Neto);
+        }
+        finally
+        {
+            FirebirdSql.Data.FirebirdClient.FbConnection.ClearAllPools();
+            if (File.Exists(fdbPath)) File.Delete(fdbPath);
+        }
+    }
+
+    [Fact]
+    [Trait("Requires", "LocalFixture")]
+    public async Task Migration_PreservesLegacyTickets_SupportsFardosDistribution_AndNeverWipesHiddenData()
+    {
+        string fdbPath = Path.Combine(Path.GetTempPath(), $"wm_mig_fardos_{Guid.NewGuid():N}.fdb");
+        var settings = new DatabaseSettings { DataSource = "localhost", Port = 3050, DatabasePath = fdbPath };
+        try
+        {
+            // 1. Inicializar BD y simular versión pre-v2.3.0 (sin columna FARDOS) con tickets históricos existentes
+            await FirebirdSchemaManager.EnsureDatabaseInitializedAsync(settings);
+            await using (var rawConn = new FirebirdSql.Data.FirebirdClient.FbConnection(settings.BuildConnectionString()))
+            {
+                await rawConn.OpenAsync();
+                string[] preUpgradeSql =
+                [
+                    "INSERT INTO DBPESAJES (FLPESAJE, PATENTE, BRUTO, TARA, NETO, TPESAJE, FECHAING, HORAING, FECHASAL, HORASAL, OBSERVA1, ANULADO, USUAING) VALUES (55, 'OLD123', 30000, 12000, 18000, 1, CURRENT_DATE, '08:00', CURRENT_DATE, '08:30', 'GUIA 1 / 51 FARDOS', '0', 1)",
+                    "INSERT INTO DBTRANSITO (FLPESAJE, PATENTE, BRUTO, TARA, TPESAJE, FECHAING, HORAING, USUAING) VALUES (56, 'OLDTRN', 15000, 0, 1, CURRENT_DATE, '09:00', 1)",
+                    "ALTER TABLE DBPESAJES DROP FARDOS",
+                    "ALTER TABLE DBTRANSITO DROP FARDOS",
+                    "ALTER TABLE DBTRAN_ANUL DROP FARDOS"
+                ];
+                foreach (string sql in preUpgradeSql)
+                {
+                    await using var cmd = new FirebirdSql.Data.FirebirdClient.FbCommand(sql, rawConn);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            }
+            DatabaseSessionFactory.InvalidateCapabilitiesCache();
+
+            // 2. Ejecutar migración idempotente v2.3.0
+            await FirebirdSchemaManager.EnsureDatabaseInitializedAsync(settings);
+            DatabaseSessionFactory.InvalidateCapabilitiesCache();
+
+            var db = new DatabaseSessionFactory(settings);
+            var weighing = new WeighingRepository(db);
+
+            // 3. Tickets previos preservados íntegramente
+            Pesaje? legacyHist = await weighing.GetPesajePorFolioAsync(55);
+            Assert.NotNull(legacyHist);
+            Assert.Equal("OLD123", legacyHist.Patente);
+            Assert.Equal(18000, legacyHist.Neto);
+            Assert.Equal(51, legacyHist.Fardos); // extraído de observación legada sin alterar el registro
+
+            List<RegistroTransito> transitos = await weighing.GetTransitoAsync();
+            Assert.Contains(transitos, t => t.FolioPesaje == 56 && t.Patente == "OLDTRN");
+
+            // 4. Alta de ticket con Fardos persistido y validación explícita al dividir (evitar duplicación silenciosa)
+            int fSrc = await weighing.CreateManualTicketAsync(new Pesaje
+            {
+                Patente = "FAR230",
+                Bruto = 20,
+                Tara = 10,
+                Neto = 10,
+                Fardos = 51,
+                FechaIngreso = DateTime.Today,
+                HoraIngreso = "10:00",
+                FechaSalida = DateTime.Today,
+                HoraSalida = "10:15"
+            }, crearEnProceso: false, 1, preserveManualNeto: true);
+
+            // Sin confirmación explícita, suma distinta (51 + 51) debe ser rechazada
+            await Assert.ThrowsAsync<InvalidOperationException>(() => weighing.SplitTicketAsync(new TicketSplitRequest
+            {
+                OriginalFolio = fSrc,
+                NetoParte1 = 6,
+                NetoParte2 = 4,
+                BrutoParte1 = 16,
+                TaraParte1 = 10,
+                BrutoParte2 = 14,
+                TaraParte2 = 10,
+                FardosParte1 = 51,
+                FardosParte2 = 51,
+                ConfirmarFardosPersonalizados = false
+            }, usuarioId: 1));
+
+            // Con reparto proporcional (31 + 20 = 51) respeta fardos sin duplicación
+            TicketSplitResult splitOk = await weighing.SplitTicketAsync(new TicketSplitRequest
+            {
+                OriginalFolio = fSrc,
+                NetoParte1 = 6,
+                NetoParte2 = 4,
+                BrutoParte1 = 16,
+                TaraParte1 = 10,
+                BrutoParte2 = 14,
+                TaraParte2 = 10,
+                FardosParte1 = 31,
+                FardosParte2 = 20
+            }, usuarioId: 1);
+
+            Pesaje? pPart1 = await weighing.GetPesajePorFolioAsync(splitOk.OriginalFolio);
+            Pesaje? pPart2 = await weighing.GetPesajePorFolioAsync(splitOk.NewFolio);
+            Assert.Equal(31, pPart1!.Fardos);
+            Assert.Equal(20, pPart2!.Fardos);
+            Assert.Equal(51, pPart1.Fardos + pPart2.Fardos);
         }
         finally
         {

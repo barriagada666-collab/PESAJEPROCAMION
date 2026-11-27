@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows.Forms;
 using PesajeProCamion.App.Services;
 using PesajeProCamion.App.UI.Theme;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 using PesajeProCamion.Domain.Security;
 using PesajeProCamion.Hardware.Export;
@@ -166,16 +167,7 @@ public sealed class UsuariosForm : Form
                 BindUser(u);
             }
         };
-        _gridUsers.CellMouseDown += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Right && e.RowIndex >= 0)
-            {
-                _gridUsers.ClearSelection();
-                _gridUsers.Rows[e.RowIndex].Selected = true;
-                _gridUsers.CurrentCell = _gridUsers.Rows[e.RowIndex].Cells[0];
-            }
-        };
-        _gridUsers.ContextMenuStrip = BuildContextMenu();
+        AttachUsersContextMenu();
         leftPanel.Controls.AddRange([_gridUsers, searchBar]);
 
         // Panel Derecho: Editor Completo Responsivo
@@ -307,37 +299,89 @@ public sealed class UsuariosForm : Form
         Controls.AddRange([split, toolbar, footerBar, header]);
     }
 
-    private ContextMenuStrip BuildContextMenu()
+    private void AttachUsersContextMenu()
     {
-        var cms = new ContextMenuStrip();
-        AppTheme.StyleContextMenu(cms);
-
-        var mNew = new ToolStripMenuItem("Nuevo Usuario", IconCatalog.Get(AppIcon.Add, 16, AppTheme.AccentEmerald));
-        mNew.Click += (_, _) => StartNewUser();
-
-        var mEdit = new ToolStripMenuItem("Editar Seleccionado", IconCatalog.Get(AppIcon.EditTicket, 16, AppTheme.NavyPrimary));
-        mEdit.Click += (_, _) => _txtNombre.Focus();
-
-        var mReset = new ToolStripMenuItem("Restablecer Contraseña...", IconCatalog.Get(AppIcon.Key, 16, AppTheme.NavyDark));
-        mReset.Click += async (_, _) => await ResetPasswordPromptAsync();
-
-        var mToggle = new ToolStripMenuItem("Activar / Desactivar Usuario", IconCatalog.Get(AppIcon.Toggle, 16, AppTheme.AccentAmber));
-        mToggle.Click += async (_, _) => await ToggleActiveAsync();
-
-        var mTplAdm = new ToolStripMenuItem("Aplicar Perfil: Administrador Total", IconCatalog.Get(AppIcon.Lock, 16, AppTheme.NavyPrimary));
-        mTplAdm.Click += (_, _) => ApplyRoleTemplate(PerfilOperacion.Administracion);
-
-        var mTplOp = new ToolStripMenuItem("Aplicar Perfil: Operador de Pesaje", IconCatalog.Get(AppIcon.Scale, 16, AppTheme.AccentEmerald));
-        mTplOp.Click += (_, _) => ApplyRoleTemplate(PerfilOperacion.OperacionPesaje);
-
-        var mDel = new ToolStripMenuItem("Eliminar Usuario", IconCatalog.Get(AppIcon.Delete, 16, AppTheme.AccentDanger));
-        mDel.Click += async (_, _) => await DeleteSelectedAsync();
-
-        var mRef = new ToolStripMenuItem("Actualizar Lista", IconCatalog.Get(AppIcon.Refresh, 16, AppTheme.NavyPrimary));
-        mRef.Click += async (_, _) => await LoadAsync(_editing?.Id);
-
-        cms.Items.AddRange([mNew, mEdit, mReset, mToggle, new ToolStripSeparator(), mTplAdm, mTplOp, new ToolStripSeparator(), mDel, mRef]);
-        return cms;
+        UniversalContextMenuService.AttachToGrid(
+            _gridUsers,
+            () => _services.UsuarioActual,
+            customActions:
+            [
+                new ContextActionSpec
+                {
+                    Text = "Nuevo Usuario",
+                    Icon = AppIcon.Add,
+                    IconTint = AppTheme.AccentEmerald,
+                    Group = 10,
+                    RequiredPermission = AccionAutorizacion.AdministrarUsuarios,
+                    ExecuteAsync = _ => { StartNewUser(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Editar Seleccionado",
+                    Icon = AppIcon.EditTicket,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 10,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.AdministrarUsuarios,
+                    IsVisible = sel => sel is Usuario,
+                    ExecuteAsync = _ => { _txtNombre.Focus(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Restablecer Contraseña...",
+                    Icon = AppIcon.Key,
+                    IconTint = AppTheme.NavyDark,
+                    Group = 10,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.AdministrarUsuarios,
+                    IsVisible = sel => sel is Usuario,
+                    ExecuteAsync = _ => ResetPasswordPromptAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Activar / Desactivar Usuario",
+                    Icon = AppIcon.Toggle,
+                    IconTint = AppTheme.AccentAmber,
+                    Group = 10,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.AdministrarUsuarios,
+                    IsVisible = sel => sel is Usuario,
+                    ExecuteAsync = _ => ToggleActiveAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Aplicar Perfil: Administrador Total",
+                    Icon = AppIcon.Lock,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 20,
+                    RequiredPermission = AccionAutorizacion.AdministrarUsuarios,
+                    ExecuteAsync = _ => { ApplyRoleTemplate(PerfilOperacion.Administracion); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Aplicar Perfil: Operador de Pesaje",
+                    Icon = AppIcon.Scale,
+                    IconTint = AppTheme.AccentEmerald,
+                    Group = 20,
+                    RequiredPermission = AccionAutorizacion.AdministrarUsuarios,
+                    ExecuteAsync = _ => { ApplyRoleTemplate(PerfilOperacion.OperacionPesaje); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Eliminar Usuario",
+                    Icon = AppIcon.Delete,
+                    IconTint = AppTheme.AccentDanger,
+                    Group = 30,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.AdministrarUsuarios,
+                    IsVisible = sel => sel is Usuario u && u.Id != (_services.UsuarioActual?.Id ?? 0),
+                    ExecuteAsync = _ => DeleteSelectedAsync()
+                }
+            ],
+            exportTitle: "LISTADO DE USUARIOS Y PERMISOS RBAC",
+            exportSubtitleProvider: () => $"Total usuarios: {_usuarios.Count:N0}",
+            sheetName: "Usuarios",
+            refreshAsync: () => LoadAsync(_editing?.Id));
     }
 
     private static void AddEditorRow(TableLayoutPanel tbl, int row, string label, TextBox tb)
@@ -550,6 +594,11 @@ public sealed class UsuariosForm : Form
 
     private async Task ToggleActiveAsync()
     {
+        if (!PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AdministrarUsuarios))
+        {
+            MessageBox.Show(this, "No está autorizado para activar o desactivar usuarios.", "Seguridad", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         if (_editing is null || _editing.Id <= 0) return;
         if (_editing.Id == _services.UsuarioActual?.Id && _editing.Activo)
         {
@@ -569,6 +618,11 @@ public sealed class UsuariosForm : Form
 
     private async Task DeleteSelectedAsync()
     {
+        if (!PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AdministrarUsuarios))
+        {
+            MessageBox.Show(this, "No está autorizado para eliminar usuarios.", "Seguridad", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         if (_editing is null || _editing.Id <= 0) return;
         if (_editing.Id == _services.UsuarioActual?.Id)
         {
@@ -589,16 +643,32 @@ public sealed class UsuariosForm : Form
 
     private void ExportExcel()
     {
-        using var sfd = new SaveFileDialog { Filter = "Excel OpenXML|*.xlsx", FileName = $"Usuarios_{DateTime.Today:yyyyMMdd}.xlsx" };
-        if (sfd.ShowDialog(this) != DialogResult.OK) return;
-        string[] headers = ["ID", "Usuario", "Cargo", "Perfil", "Activo", "Agregar", "Modificar", "Eliminar", "Imprimir", "Mod.Pesaje", "Mod.Gestión", "Sup.Sistema"];
-        List<IReadOnlyList<object?>> rows = _usuarios.Select(u => (IReadOnlyList<object?>)
-        [
-            u.Id, u.Nombre, u.Cargo, PermissionService.DescribirPerfil(u.Perfil), u.Activo ? "SI" : "NO",
-            u.PuedeAgregar ? "SI" : "NO", u.PuedeModificar ? "SI" : "NO", u.PuedeEliminar ? "SI" : "NO",
-            u.PuedeImprimir ? "SI" : "NO", u.IngresoPesaje ? "SI" : "NO", u.IngresoGestion ? "SI" : "NO", u.SupervisorSistema ? "SI" : "NO"
-        ]).ToList();
-        DataExporter.ExportToXlsx(sfd.FileName, "Usuarios", headers, rows);
-        MessageBox.Show(this, $"Listado exportado:\r\n{sfd.FileName}", "Exportar", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        try
+        {
+            using var sfd = new SaveFileDialog { Filter = "Excel OpenXML|*.xlsx", FileName = $"Usuarios_{DateTime.Today:yyyyMMdd}.xlsx" };
+            if (sfd.ShowDialog(this) != DialogResult.OK) return;
+            string[] headers = ["ID", "Usuario", "Cargo", "Perfil", "Activo", "Agregar", "Modificar", "Eliminar", "Imprimir", "Mod.Pesaje", "Mod.Gestión", "Sup.Sistema"];
+            List<IReadOnlyList<object?>> rows = _usuarios.Select(u => (IReadOnlyList<object?>)
+            [
+                u.Id, u.Nombre, u.Cargo, PermissionService.DescribirPerfil(u.Perfil), u.Activo ? "SI" : "NO",
+                u.PuedeAgregar ? "SI" : "NO", u.PuedeModificar ? "SI" : "NO", u.PuedeEliminar ? "SI" : "NO",
+                u.PuedeImprimir ? "SI" : "NO", u.IngresoPesaje ? "SI" : "NO", u.IngresoGestion ? "SI" : "NO", u.SupervisorSistema ? "SI" : "NO"
+            ]).ToList();
+            DataExporter.ExportStandardReportToXlsx(sfd.FileName, new StandardTableReport
+            {
+                Title = "USUARIOS Y PERMISOS RBAC DEL SISTEMA",
+                Subtitle = $"Total usuarios registrados: {_usuarios.Count:N0}",
+                SheetName = "Usuarios",
+                Headers = headers,
+                Rows = rows,
+                Landscape = true
+            });
+            MessageBox.Show(this, $"Listado exportado:\r\n{sfd.FileName}", "Exportar", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("UsuariosForm.ExportExcel", "Error exportando usuarios a Excel", ex);
+            MessageBox.Show(this, $"Error exportando usuarios:\r\n{ex.Message}", "Error Excel", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 }

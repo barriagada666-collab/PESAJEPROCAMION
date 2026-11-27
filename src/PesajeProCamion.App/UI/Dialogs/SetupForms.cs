@@ -247,6 +247,11 @@ public sealed class VisorSetupForm : Form
 
     private async Task SaveAsync()
     {
+        if (!PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ConfigurarVisorBascula))
+        {
+            MessageBox.Show(this, "No está autorizado para modificar la configuración del visor serial.", "Permisos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         var hw = new HardwareSetup
         {
             Device = "BASCULA",
@@ -382,6 +387,11 @@ public sealed class DinamicoSetupForm : Form
 
     private async Task SaveAsync()
     {
+        if (!PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ConfigurarPesajeDinamico))
+        {
+            MessageBox.Show(this, "No está autorizado para modificar el pesaje dinámico MOP.", "Permisos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         ConfiguracionSistema c = await _services.Catalogs.GetConfigAsync();
         c.VmopCutLeft = (int)_numCutLeft.Value;
         c.VmopCutRight = (int)_numCutRight.Value;
@@ -554,6 +564,11 @@ public sealed class InstalacionForm : Form
 
     private async Task SaveAsync()
     {
+        if (!PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ConfigurarInstalacion))
+        {
+            MessageBox.Show(this, "No está autorizado para modificar parámetros de instalación.", "Permisos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         BasculaInfo b = await _services.Catalogs.GetBasculaAsync(1);
         b.NombreEmpresa = _txtEmpresa.Text.Trim();
         b.Rut = _txtRut.Text.Trim();

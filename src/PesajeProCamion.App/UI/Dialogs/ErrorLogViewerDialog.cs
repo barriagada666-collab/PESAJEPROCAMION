@@ -104,6 +104,34 @@ public sealed class ErrorLogViewerDialog : Form
             new DataGridViewTextBoxColumn { HeaderText = "Mensaje", FillWeight = 320 }
         ]);
         _grid.SelectionChanged += (_, _) => ShowSelectedDetail();
+        UniversalContextMenuService.AttachToGrid(
+            _grid,
+            () => null,
+            customActions:
+            [
+                new ContextActionSpec
+                {
+                    Text = "Copiar Detalle Técnico",
+                    Icon = AppIcon.Copy,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 10,
+                    RequiresRow = true,
+                    IsVisible = _ => !string.IsNullOrWhiteSpace(_txtDetail.Text),
+                    ExecuteAsync = _ => { Clipboard.SetText(_txtDetail.Text); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Exportar Archivo .LOG...",
+                    Icon = AppIcon.Save,
+                    IconTint = AppTheme.AccentEmerald,
+                    Group = 20,
+                    ExecuteAsync = _ => { ExportLogs(); return Task.CompletedTask; }
+                }
+            ],
+            exportTitle: "REGISTRO DE LOGS Y DIAGNÓSTICO DEL SISTEMA",
+            sheetName: "Logs_Diagnostico",
+            refreshAsync: () => { ReloadGrid(); return Task.CompletedTask; },
+            allowPrint: false);
         split.Panel1.Controls.Add(_grid);
 
         var detailPanel = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.SurfaceCard, Padding = new Padding(8) };

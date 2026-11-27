@@ -88,6 +88,64 @@ public abstract class CatalogCrudBaseForm<TItem> : Form
         _formPanel.Padding = new Padding(18);
         _formPanel.AutoScroll = true;
 
+        UniversalContextMenuService.AttachToControl(
+            _formPanel,
+            () => _services.UsuarioActual,
+            [
+                new ContextActionSpec
+                {
+                    Text = "Nuevo Registro",
+                    Icon = AppIcon.Add,
+                    IconTint = AppTheme.AccentEmerald,
+                    Group = 10,
+                    RequiredPermission = AccionAutorizacion.AgregarRegistro,
+                    ExecuteAsync = _ => { StartNewRecord(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Guardar Cambios",
+                    Icon = AppIcon.Save,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 10,
+                    IsVisible = _ => PermissionService.EstaAutorizado(_services.UsuarioActual, _isNewRecord ? AccionAutorizacion.AgregarRegistro : AccionAutorizacion.ModificarRegistro),
+                    ExecuteAsync = _ => SaveCurrentAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Cancelar Edición",
+                    Icon = AppIcon.Cancel,
+                    IconTint = AppTheme.TextPrimary,
+                    Group = 10,
+                    ExecuteAsync = _ => { CancelEdits(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Buscar / Listar Catálogo...",
+                    Icon = AppIcon.List,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 20,
+                    ExecuteAsync = _ => { OpenListSelector(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Eliminar Registro Actual",
+                    Icon = AppIcon.Delete,
+                    IconTint = AppTheme.AccentDanger,
+                    Group = 30,
+                    RequiredPermission = AccionAutorizacion.EliminarRegistro,
+                    IsVisible = _ => !_isNewRecord && _currentIndex >= 0 && _currentIndex < _items.Count,
+                    ExecuteAsync = _ => DeleteCurrentAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Actualizar Catálogo",
+                    Icon = AppIcon.Refresh,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 40,
+                    ExecuteAsync = _ => ReloadAsync()
+                }
+            ]);
+
         _status.BackColor = AppTheme.SurfaceCard;
         _lblRecord.Spring = true;
         _lblRecord.TextAlign = ContentAlignment.MiddleLeft;
