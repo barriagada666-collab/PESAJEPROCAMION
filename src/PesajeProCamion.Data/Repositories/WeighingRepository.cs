@@ -99,12 +99,13 @@ public sealed class WeighingRepository
     public async Task<int> RegistrarIngresoTransitoAsync(RegistroTransito tr, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(tr);
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         string pat = ChileanValidators.NormalizarPatente(tr.Patente);
         return await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
             if (tr.FolioPesaje <= 0)
             {
-                tr.FolioPesaje = await AllocateNextPesajeFolioAsync(conn, tx, ct).ConfigureAwait(false);
+                tr.FolioPesaje = await AllocateNextPesajeFolioAsync(conn, tx, caps, ct).ConfigureAwait(false);
             }
 
             await using var cmd = new FbCommand("""
@@ -143,7 +144,7 @@ public sealed class WeighingRepository
             AddParam(cmd, "@TRS", tr.Traspaso);
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-            await SecurityRepository.InsertAuditInternalAsync(conn, tx, tr.UsuarioIngreso, "PESAJE", "DBTRANSITO", tr.FolioPesaje.ToString(CultureInfo.InvariantCulture), "INGRESO", $"Patente={pat}, Bruto={tr.Bruto}, Tara={tr.Tara}", ct).ConfigureAwait(false);
+            await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, tr.UsuarioIngreso, "PESAJE", "DBTRANSITO", tr.FolioPesaje.ToString(CultureInfo.InvariantCulture), "INGRESO", $"Patente={pat}, Bruto={tr.Bruto}, Tara={tr.Tara}", ct).ConfigureAwait(false);
             return tr.FolioPesaje;
         }, ct).ConfigureAwait(false);
     }
@@ -151,6 +152,7 @@ public sealed class WeighingRepository
     public async Task<int> CompletarPesajeAsync(Pesaje p, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(p);
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         string pat = ChileanValidators.NormalizarPatente(p.Patente);
         p.Patente = pat;
         p.Neto = WeighingCalculator.CalcularNeto(p.Bruto, p.Tara);
@@ -159,7 +161,7 @@ public sealed class WeighingRepository
         {
             if (p.FolioPesaje <= 0)
             {
-                p.FolioPesaje = await AllocateNextPesajeFolioAsync(conn, tx, ct).ConfigureAwait(false);
+                p.FolioPesaje = await AllocateNextPesajeFolioAsync(conn, tx, caps, ct).ConfigureAwait(false);
             }
 
             await using var insCmd = new FbCommand("""
@@ -241,13 +243,14 @@ public sealed class WeighingRepository
                 await camCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
-            await SecurityRepository.InsertAuditInternalAsync(conn, tx, p.UsuarioSalida, "PESAJE", "DBPESAJES", p.FolioPesaje.ToString(CultureInfo.InvariantCulture), "SALIDA", $"Patente={pat}, Bruto={p.Bruto}, Tara={p.Tara}, Neto={p.Neto}", ct).ConfigureAwait(false);
+            await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, p.UsuarioSalida, "PESAJE", "DBPESAJES", p.FolioPesaje.ToString(CultureInfo.InvariantCulture), "SALIDA", $"Patente={pat}, Bruto={p.Bruto}, Tara={p.Tara}, Neto={p.Neto}", ct).ConfigureAwait(false);
             return p.FolioPesaje;
         }, ct).ConfigureAwait(false);
     }
 
     public async Task EliminarTransitoAsync(int folioPesaje, short usuarioId, string motivo, CancellationToken ct = default)
     {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         DateTime now = DateTime.Now;
         await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
@@ -272,7 +275,7 @@ public sealed class WeighingRepository
             AddParam(delCmd, "@FP", folioPesaje);
             await delCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-            await SecurityRepository.InsertAuditInternalAsync(conn, tx, usuarioId, "TRANSITO", "DBTRANSITO", folioPesaje.ToString(CultureInfo.InvariantCulture), "ELIMINAR", motivo, ct).ConfigureAwait(false);
+            await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "TRANSITO", "DBTRANSITO", folioPesaje.ToString(CultureInfo.InvariantCulture), "ELIMINAR", motivo, ct).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
     }
 
@@ -351,7 +354,7 @@ public sealed class WeighingRepository
             LEFT JOIN DBUSUARIOS U2 ON U2.USUARIO = P.USUASAL
             LEFT JOIN DBUSUARIOS U3 ON U3.USUARIO = P.USUAMOD
             LEFT JOIN DBUSUARIOS U4 ON U4.USUARIO = P.USUADEL
-            WHERE 1 = 1
+            WHERE P.FLPESAJE IS NOT NULL
             """;
 
         using var cmd = new FbCommand { Connection = conn };
@@ -414,12 +417,16 @@ public sealed class WeighingRepository
         return list;
     }
 
-    public Task<Pesaje?> GetPesajePorFolioAsync(int folio, CancellationToken ct = default)
-        => QueryPesajesAsync(folioExacto: folio, maxRows: 1, ct: ct).ContinueWith(t => t.Result.FirstOrDefault(), ct);
+    public async Task<Pesaje?> GetPesajePorFolioAsync(int folio, CancellationToken ct = default)
+    {
+        List<Pesaje> rows = await QueryPesajesAsync(folioExacto: folio, maxRows: 1, ct: ct).ConfigureAwait(false);
+        return rows.FirstOrDefault();
+    }
 
     public async Task ModificarPesajeAsync(Pesaje p, short usuarioId, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(p);
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         DateTime now = DateTime.Now;
         p.Neto = p.Anulado ? 0 : WeighingCalculator.CalcularNeto(p.Bruto, p.Tara);
         p.FechaModificacion = now.Date;
@@ -459,13 +466,14 @@ public sealed class WeighingRepository
             AddParam(cmd, "@FP", p.FolioPesaje);
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-            await SecurityRepository.InsertAuditInternalAsync(conn, tx, usuarioId, "GESTION", "DBPESAJES", p.FolioPesaje.ToString(CultureInfo.InvariantCulture), "MODIFICAR", $"Patente={p.Patente}, Bruto={p.Bruto}, Tara={p.Tara}, Neto={p.Neto}", ct).ConfigureAwait(false);
+            await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBPESAJES", p.FolioPesaje.ToString(CultureInfo.InvariantCulture), "MODIFICAR", $"Patente={p.Patente}, Bruto={p.Bruto}, Tara={p.Tara}, Neto={p.Neto}", ct).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
     }
 
     /// <summary>Anula o reactiva un pesaje específico por su folio (corrige bug legacy de PA_DEL_PESAJES sin filtro).</summary>
     public async Task ToggleAnularPesajeAsync(int folioPesaje, short usuarioId, CancellationToken ct = default)
     {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
             await using var sel = new FbCommand("SELECT ANULADO, BRUTO, TARA FROM DBPESAJES WHERE FLPESAJE = @FP", conn, tx);
@@ -497,7 +505,7 @@ public sealed class WeighingRepository
             AddParam(upd, "@FP", folioPesaje);
             await upd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-            await SecurityRepository.InsertAuditInternalAsync(conn, tx, usuarioId, "GESTION", "DBPESAJES", folioPesaje.ToString(CultureInfo.InvariantCulture), nuevoAnulado ? "ANULAR" : "REACTIVAR", $"Neto={nuevoNeto}", ct).ConfigureAwait(false);
+            await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBPESAJES", folioPesaje.ToString(CultureInfo.InvariantCulture), nuevoAnulado ? "ANULAR" : "REACTIVAR", $"Neto={nuevoNeto}", ct).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
     }
 
@@ -567,12 +575,29 @@ public sealed class WeighingRepository
         return list;
     }
 
-    private static async Task<int> AllocateNextPesajeFolioAsync(FbConnection conn, FbTransaction tx, CancellationToken ct)
+    private static async Task<int> AllocateNextPesajeFolioAsync(FbConnection conn, FbTransaction tx, DatabaseCapabilities caps, CancellationToken ct)
     {
-        await using var genCmd = new FbCommand("SELECT NEXT VALUE FOR GEN_FLPESAJE FROM RDB$DATABASE", conn, tx);
-        int folio = Convert.ToInt32(await genCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        int folio;
+        if (caps.HasGenPesaje)
+        {
+            await using var genCmd = new FbCommand("SELECT NEXT VALUE FOR GEN_FLPESAJE FROM RDB$DATABASE", conn, tx);
+            folio = Convert.ToInt32(await genCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            await using var fCmd = new FbCommand("SELECT COALESCE((SELECT FIRST 1 FLPESAJE FROM DBFOLIOS), 1), COALESCE((SELECT MAX(FLPESAJE) FROM DBPESAJES WHERE FLPESAJE IS NOT NULL), 0), COALESCE((SELECT MAX(FLPESAJE) FROM DBTRANSITO WHERE FLPESAJE IS NOT NULL), 0) FROM RDB$DATABASE", conn, tx);
+            await using FbDataReader fr = await fCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            await fr.ReadAsync(ct).ConfigureAwait(false);
+            int curFol = Convert.ToInt32(fr.GetValue(0), CultureInfo.InvariantCulture);
+            int maxP = Convert.ToInt32(fr.GetValue(1), CultureInfo.InvariantCulture);
+            int maxT = Convert.ToInt32(fr.GetValue(2), CultureInfo.InvariantCulture);
+            folio = Math.Max(curFol, Math.Max(maxP, maxT) + 1);
+        }
 
-        await using var folCmd = new FbCommand("UPDATE DBFOLIOS SET FLPESAJE = @NEXT WHERE ID = 1", conn, tx);
+        string updSql = caps.HasFoliosId
+            ? "UPDATE DBFOLIOS SET FLPESAJE = @NEXT WHERE ID = 1"
+            : "UPDATE DBFOLIOS SET FLPESAJE = @NEXT";
+        await using var folCmd = new FbCommand(updSql, conn, tx);
         AddParam(folCmd, "@NEXT", folio + 1);
         await folCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         return folio;

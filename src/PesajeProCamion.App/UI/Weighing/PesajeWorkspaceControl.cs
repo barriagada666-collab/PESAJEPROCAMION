@@ -6,6 +6,7 @@ using PesajeProCamion.App.Services;
 using PesajeProCamion.App.UI.Controls;
 using PesajeProCamion.App.UI.Dialogs;
 using PesajeProCamion.App.UI.Theme;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 using PesajeProCamion.Domain.Security;
 using PesajeProCamion.Domain.Services;
@@ -15,12 +16,17 @@ using PesajeProCamion.Hardware.Scale;
 
 namespace PesajeProCamion.App.UI.Weighing;
 
-/// <summary>Espacio de trabajo principal de Pesaje Comercial (Unificado con búsqueda, captura serial/manual, tara registrada y tránsito).</summary>
+/// <summary>
+/// Espacio de trabajo principal de Pesaje Comercial con identidad Petrol Teal + Logo Cambiaso,
+/// visor RS-232 en vivo, captura Pesar Camión / Pesar Carro / Tara Registrada / Grabar,
+/// autoresolución de catálogos y grilla de vehículos en tránsito.
+/// </summary>
 public sealed class PesajeWorkspaceControl : UserControl
 {
     private readonly AppServices _services;
     private readonly ToolTip _tt = new();
     private readonly DigitalWeightDisplay _lcd = new();
+    private readonly Label _lblEmp = new();
     private readonly Label _lblModoOperacion = new();
     private readonly Label _lblEstadoBalanza = new();
 
@@ -40,7 +46,7 @@ public sealed class PesajeWorkspaceControl : UserControl
     private readonly TextBox _txtTranspNombre = new() { ReadOnly = true };
     private readonly TextBox _txtChoferCod = new() { MaxLength = 35 };
     private readonly TextBox _txtChoferNombre = new() { ReadOnly = true };
-    private readonly TextBox _txtGuia = new() { MaxLength = 12, CharacterCasing = CharacterCasing.Upper };
+    private readonly TextBox _txtGuia = new() { MaxLength = 50, CharacterCasing = CharacterCasing.Upper };
     private readonly NumericUpDown _numNetoInf = new() { Maximum = 200_000, ThousandsSeparator = true };
     private readonly NumericUpDown _numTipoMop = new() { Maximum = 9999 };
     private readonly NumericUpDown _numLargo = new() { Maximum = 90 };
@@ -50,8 +56,15 @@ public sealed class PesajeWorkspaceControl : UserControl
     private readonly NumericUpDown _numBruto = new() { Maximum = 200_000, ThousandsSeparator = true, ReadOnly = true };
     private readonly NumericUpDown _numTara = new() { Maximum = 200_000, ThousandsSeparator = true, ReadOnly = true };
     private readonly NumericUpDown _numNeto = new() { Maximum = 200_000, ThousandsSeparator = true, ReadOnly = true };
+    private readonly Label _lblTaraRef = new();
+    private readonly Label _lblIngresoInfo = new();
     private readonly Label _lblMsg = new();
     private readonly DataGridView _gridTransito = new();
+
+    private readonly Button _btnPesarCamion = new();
+    private readonly Button _btnPesarCarro = new();
+    private readonly Button _btnTaraRegPanel = new();
+    private readonly Button _btnGrabarPanel = new();
 
     private RegistroTransito? _transitoActivo;
     private Camion? _camionActual;
@@ -68,6 +81,8 @@ public sealed class PesajeWorkspaceControl : UserControl
         Dock = DockStyle.Fill;
         BackColor = AppTheme.BackgroundLight;
         BuildUi();
+        _currentWeightKg = _services.Scale.CurrentWeightKg;
+        _lcd.UpdateReading(_currentWeightKg, true, _currentWeightKg == 0, false, false, false, _services.Scale.IsSimulationActive);
         _services.Scale.ReadingReceived += OnReadingReceived;
     }
 
@@ -85,6 +100,10 @@ public sealed class PesajeWorkspaceControl : UserControl
 
     public async Task RefreshTransitoAsync()
     {
+        _lblEmp.Text = string.IsNullOrWhiteSpace(_services.BasculaActual.NombreEmpresa)
+            ? "BÁSCULA COMERCIAL"
+            : _services.BasculaActual.NombreEmpresa;
+
         List<RegistroTransito> rows = await _services.Weighing.GetTransitoAsync();
         _gridTransito.Rows.Clear();
         foreach (RegistroTransito t in rows)
@@ -106,133 +125,202 @@ public sealed class PesajeWorkspaceControl : UserControl
 
     private void BuildUi()
     {
-        // Header with Truck visual + Status + Digital 7-Segment Display
-        var header = new Panel { Dock = DockStyle.Top, Height = 104, BackColor = AppTheme.NavyDark, Padding = new Padding(14, 10, 14, 10) };
-        var picTruck = new PictureBox { Location = new Point(14, 12), Size = new Size(105, 78), SizeMode = PictureBoxSizeMode.Zoom, Image = IconCatalog.RenderTruckBadge(105, 78) };
-        var lblEmp = new Label
+        // Header corporativo Petrol Teal + Logo Cambiaso + Visor 7 Segmentos
+        var header = new Panel { Dock = DockStyle.Top, Height = 104, Padding = new Padding(14, 10, 14, 10) };
+        header.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, header.ClientRectangle);
+
+        var logoCard = new Panel { Location = new Point(14, 14), Size = new Size(118, 74), BackColor = Color.White };
+        var picLogo = new PictureBox
         {
-            Location = new Point(132, 14),
-            Size = new Size(420, 24),
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI", 12f, FontStyle.Bold),
-            Text = string.IsNullOrWhiteSpace(_services.BasculaActual.NombreEmpresa) ? "BÁSCULA COMERCIAL" : _services.BasculaActual.NombreEmpresa
+            Dock = DockStyle.Fill,
+            Padding = new Padding(4),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            Image = IconCatalog.GetCorporateLogo() ?? IconCatalog.RenderTruckBadge(110, 66)
         };
-        _lblModoOperacion.Location = new Point(132, 42);
-        _lblModoOperacion.Size = new Size(420, 24);
+        logoCard.Controls.Add(picLogo);
+
+        _lblEmp.Location = new Point(146, 12);
+        _lblEmp.Size = new Size(460, 26);
+        _lblEmp.ForeColor = Color.White;
+        _lblEmp.BackColor = Color.Transparent;
+        _lblEmp.Font = new Font("Segoe UI", 12.5f, FontStyle.Bold);
+        _lblEmp.Text = string.IsNullOrWhiteSpace(_services.BasculaActual.NombreEmpresa) ? "BÁSCULA COMERCIAL" : _services.BasculaActual.NombreEmpresa;
+
+        _lblModoOperacion.Location = new Point(146, 42);
+        _lblModoOperacion.Size = new Size(460, 24);
         _lblModoOperacion.ForeColor = AppTheme.LcdDigitOn;
+        _lblModoOperacion.BackColor = Color.Transparent;
         _lblModoOperacion.Font = new Font("Segoe UI", 10.5f, FontStyle.Bold);
         _lblModoOperacion.Text = "MODO: PRIMER PESAJE / NUEVO INGRESO";
 
-        _lblEstadoBalanza.Location = new Point(132, 68);
-        _lblEstadoBalanza.Size = new Size(420, 20);
-        _lblEstadoBalanza.ForeColor = Color.LightSteelBlue;
-        _lblEstadoBalanza.Font = new Font("Segoe UI", 9f);
+        _lblEstadoBalanza.Location = new Point(146, 68);
+        _lblEstadoBalanza.Size = new Size(460, 20);
+        _lblEstadoBalanza.ForeColor = AppTheme.GoldAccent;
+        _lblEstadoBalanza.BackColor = Color.Transparent;
+        _lblEstadoBalanza.Font = AppTheme.FontBodyBold;
         _lblEstadoBalanza.Text = _services.Scale.StatusDescription;
 
         _lcd.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         _lcd.Location = new Point(header.Width - 365, 11);
         _lcd.Size = new Size(348, 82);
-        header.Controls.AddRange([picTruck, lblEmp, _lblModoOperacion, _lblEstadoBalanza, _lcd]);
+        header.Controls.AddRange([logoCard, _lblEmp, _lblModoOperacion, _lblEstadoBalanza, _lcd]);
 
-        // Consistent Action Toolbar
+        // Barra de herramientas uniforme con acceso directo al Visor RS-232
         var toolbar = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, BackColor = AppTheme.SurfaceCard, Padding = new Padding(8, 4, 8, 4) };
         ToolStripButton btnCancelar = AppTheme.CreateToolButton(AppIcon.Cancel, "Cancelar Pesaje", "Limpiar formulario actual", AppTheme.AccentDanger);
-        ToolStripButton btnBuscarFolio = AppTheme.CreateToolButton(AppIcon.Search, "Reimprimir Folio", "Buscar ticket por folio", AppTheme.NavyPrimary);
-        ToolStripButton btnCapturar = AppTheme.CreateToolButton(AppIcon.Scale, "Capturar Peso", "Capturar peso actual desde indicador (F5)", AppTheme.AccentEmerald);
-        ToolStripButton btnManual = AppTheme.CreateToolButton(AppIcon.ManualWeight, "Ingreso Manual", "Digitar peso manualmente si está habilitado", AppTheme.AccentAmber);
-        ToolStripButton btnTaraReg = AppTheme.CreateToolButton(AppIcon.Tare, "Aplicar Tara Reg.", "Aplicar tara registrada del camión", AppTheme.NavyPrimary);
-        ToolStripButton btnGuardar = AppTheme.CreateToolButton(AppIcon.Save, "Guardar Pesaje", "Guardar tránsito o completar salida", AppTheme.NavyDark);
+        ToolStripButton btnBuscarFolio = AppTheme.CreateToolButton(AppIcon.Search, "Reimprimir Folio", "Buscar e imprimir ticket por folio", AppTheme.NavyPrimary);
+        ToolStripButton btnVisor = AppTheme.CreateToolButton(AppIcon.SerialPort, "Visor / COM", "Configurar puerto COM, trama RS-232 o simulador", AppTheme.NavyPrimary);
+        ToolStripButton btnManual = AppTheme.CreateToolButton(AppIcon.ManualWeight, "Ingreso Manual", "Digitar peso de contingencia/prueba en el visor", AppTheme.AccentAmber);
         ToolStripButton btnMop = AppTheme.CreateToolButton(AppIcon.AxleMop, "Pesaje Ejes MOP", "Abrir pesaje por ejes estático/dinámico", AppTheme.NavyPrimary);
-        ToolStripButton btnAnularTr = AppTheme.CreateToolButton(AppIcon.Delete, "Anular Tránsito", "Eliminar camión seleccionado en tránsito", AppTheme.AccentDanger);
+        ToolStripButton btnAnularTr = AppTheme.CreateToolButton(AppIcon.Delete, "Anular Tránsito", "Eliminar camión seleccionado de planta", AppTheme.AccentDanger);
 
         btnCancelar.Click += (_, _) => ClearForm();
         btnBuscarFolio.Click += async (_, _) => await ReimprimirPorFolioAsync();
-        btnCapturar.Click += (_, _) => CaptureCurrentScaleWeight();
+        btnVisor.Click += (_, _) => OpenVisorDialog();
         btnManual.Click += (_, _) => CaptureManualWeight();
-        btnTaraReg.Click += (_, _) => ApplyRegisteredTare();
-        btnGuardar.Click += async (_, _) => await SaveWeighingAsync();
         btnMop.Click += async (_, _) => await OpenMopWeighingAsync();
         btnAnularTr.Click += async (_, _) => await DeleteSelectedTransitAsync();
 
         toolbar.Items.AddRange([
             btnCancelar, btnBuscarFolio, new ToolStripSeparator(),
-            btnCapturar, btnManual, btnTaraReg, new ToolStripSeparator(),
-            btnGuardar, btnMop, new ToolStripSeparator(),
+            btnVisor, btnManual, new ToolStripSeparator(),
+            btnMop, new ToolStripSeparator(),
             btnAnularTr
         ]);
 
-        // Form Card + Transit Grid SplitContainer
-        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 325, BackColor = AppTheme.BorderSubtle };
-        var formCard = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.SurfaceCard, AutoScroll = true, Padding = new Padding(14) };
+        // Tarjeta Principal dividida: Izquierda Campos + Derecha Panel Bruto/Tara/Neto + 4 Botones Operativos
+        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 365, BackColor = AppTheme.BorderSubtle };
+        var topContainer = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.BackgroundLight, Padding = new Padding(10), AutoScroll = true };
+
+        var leftCard = new Panel
+        {
+            Location = new Point(10, 10),
+            Size = new Size(765, 342),
+            BackColor = AppTheme.SurfaceCard,
+            BorderStyle = BorderStyle.FixedSingle
+        };
 
         _cmbTipoPesaje.Items.AddRange(["1 - Recepción de Carga", "2 - Despacho de Carga", "3 - Movimiento Interno"]);
         _cmbTipoPesaje.SelectedIndex = 0;
 
-        int c1L = 16, c1X = 115, c2L = 435, c2X = 535, y = 12;
-        AddLbl(formCard, "Patente *", c1L, y); _txtPatente.SetBounds(c1X, y - 2, 105, 24);
-        Button bPat = AddSearchBtn(formCard, c1X + 110, y - 3, "Buscar camión registrado (F2)", async () => await LookupCamionAsync());
-        AddLbl(formCard, "Acoplado", 275, y); _txtAcoplado.SetBounds(342, y - 2, 82, 24);
-        AddLbl(formCard, "Tipo Pesaje", c2L, y); _cmbTipoPesaje.SetBounds(c2X, y - 2, 210, 24);
-        AddLbl(formCard, "Folio", 760, y); _txtFolio.SetBounds(808, y - 2, 95, 24);
+        int c1L = 14, c1X = 104, c2L = 408, c2X = 500, y = 14;
+        AddLbl(leftCard, "Patente *", c1L, y); _txtPatente.SetBounds(c1X, y - 2, 100, 24);
+        Button bPat = AddSearchBtn(leftCard, c1X + 104, y - 3, "Buscar camión registrado", async () => await LookupCamionAsync());
+        AddLbl(leftCard, "Acoplado", 252, y); _txtAcoplado.SetBounds(318, y - 2, 78, 24);
+        AddLbl(leftCard, "Tipo Pesaje", c2L, y); _cmbTipoPesaje.SetBounds(c2X, y - 2, 165, 24);
+        AddLbl(leftCard, "Folio", 672, y); _txtFolio.SetBounds(710, y - 2, 44, 24);
 
         _txtPatente.Leave += async (_, _) => await OnPatenteLeaveAsync();
 
         y += 34;
-        AddLbl(formCard, "Cliente *", c1L, y); _txtClienteRut.SetBounds(c1X, y - 2, 95, 24);
-        AddSearchBtn(formCard, c1X + 98, y - 3, "Buscar cliente (F2)", async () => await LookupClienteAsync());
-        _txtClienteNombre.SetBounds(c1X + 132, y - 2, 180, 24);
-        AddLbl(formCard, "Producto *", c2L, y); _txtProductoCod.SetBounds(c2X, y - 2, 95, 24);
-        AddSearchBtn(formCard, c2X + 98, y - 3, "Buscar producto (F2)", async () => await LookupProductoAsync());
-        _txtProductoNombre.SetBounds(c2X + 132, y - 2, 236, 24);
+        AddLbl(leftCard, "Cliente *", c1L, y); _txtClienteRut.SetBounds(c1X, y - 2, 86, 24);
+        AddSearchBtn(leftCard, c1X + 89, y - 3, "Buscar cliente", async () => await LookupClienteAsync());
+        _txtClienteNombre.SetBounds(c1X + 122, y - 2, 170, 24);
+        AddLbl(leftCard, "Producto *", c2L, y); _txtProductoCod.SetBounds(c2X, y - 2, 86, 24);
+        AddSearchBtn(leftCard, c2X + 89, y - 3, "Buscar producto", async () => await LookupProductoAsync());
+        _txtProductoNombre.SetBounds(c2X + 122, y - 2, 132, 24);
 
         y += 34;
-        AddLbl(formCard, "Origen", c1L, y); _txtOrigenCod.SetBounds(c1X, y - 2, 75, 24);
-        AddSearchBtn(formCard, c1X + 78, y - 3, "Buscar origen (F2)", async () => await LookupOrigenAsync());
-        _txtOrigenNombre.SetBounds(c1X + 112, y - 2, 200, 24);
-        AddLbl(formCard, "Destino", c2L, y); _txtDestinoCod.SetBounds(c2X, y - 2, 75, 24);
-        AddSearchBtn(formCard, c2X + 78, y - 3, "Buscar destino (F2)", async () => await LookupDestinoAsync());
-        _txtDestinoNombre.SetBounds(c2X + 112, y - 2, 256, 24);
+        AddLbl(leftCard, "Origen", c1L, y); _txtOrigenCod.SetBounds(c1X, y - 2, 74, 24);
+        AddSearchBtn(leftCard, c1X + 77, y - 3, "Buscar origen", async () => await LookupOrigenAsync());
+        _txtOrigenNombre.SetBounds(c1X + 110, y - 2, 182, 24);
+        AddLbl(leftCard, "Destino", c2L, y); _txtDestinoCod.SetBounds(c2X, y - 2, 74, 24);
+        AddSearchBtn(leftCard, c2X + 77, y - 3, "Buscar destino", async () => await LookupDestinoAsync());
+        _txtDestinoNombre.SetBounds(c2X + 110, y - 2, 144, 24);
 
         y += 34;
-        AddLbl(formCard, "Transportista", c1L, y); _txtTranspCod.SetBounds(c1X, y - 2, 95, 24);
-        AddSearchBtn(formCard, c1X + 98, y - 3, "Buscar transportista (F2)", async () => await LookupTranspAsync());
-        _txtTranspNombre.SetBounds(c1X + 132, y - 2, 180, 24);
-        AddLbl(formCard, "Chofer", c2L, y); _txtChoferCod.SetBounds(c2X, y - 2, 95, 24);
-        AddSearchBtn(formCard, c2X + 98, y - 3, "Buscar chofer (F2)", async () => await LookupChoferAsync());
-        _txtChoferNombre.SetBounds(c2X + 132, y - 2, 236, 24);
+        AddLbl(leftCard, "Transport.", c1L, y); _txtTranspCod.SetBounds(c1X, y - 2, 86, 24);
+        AddSearchBtn(leftCard, c1X + 89, y - 3, "Buscar transportista", async () => await LookupTranspAsync());
+        _txtTranspNombre.SetBounds(c1X + 122, y - 2, 170, 24);
+        AddLbl(leftCard, "Chofer", c2L, y); _txtChoferCod.SetBounds(c2X, y - 2, 86, 24);
+        AddSearchBtn(leftCard, c2X + 89, y - 3, "Buscar chofer", async () => await LookupChoferAsync());
+        _txtChoferNombre.SetBounds(c2X + 122, y - 2, 132, 24);
 
         y += 34;
-        AddLbl(formCard, "Guía Desp.", c1L, y); _txtGuia.SetBounds(c1X, y - 2, 110, 24);
-        AddLbl(formCard, "Neto Inf.", 240, y); _numNetoInf.SetBounds(308, y - 2, 110, 24);
-        AddLbl(formCard, "Tipo MOP", c2L, y); _numTipoMop.SetBounds(c2X, y - 2, 76, 24);
-        AddLbl(formCard, "Largo (m)", 625, y); _numLargo.SetBounds(692, y - 2, 65, 24);
-        _chkUsarTaraReg.Text = "Usar Tara Reg."; _chkUsarTaraReg.SetBounds(775, y, 130, 22);
+        AddLbl(leftCard, "Guía Desp.", c1L, y); _txtGuia.SetBounds(c1X, y - 2, 118, 24);
+        AddLbl(leftCard, "Neto Inf.", 232, y); _numNetoInf.SetBounds(296, y - 2, 100, 24);
+        AddLbl(leftCard, "MOP", c2L, y); _numTipoMop.SetBounds(450, y - 2, 64, 24);
+        AddLbl(leftCard, "Largo (m)", 524, y); _numLargo.SetBounds(590, y - 2, 54, 24);
+        _chkUsarTaraReg.Text = "Tara Reg."; _chkUsarTaraReg.SetBounds(654, y, 102, 22);
 
         y += 34;
-        AddLbl(formCard, "Observación", c1L, y); _txtObs.SetBounds(c1X, y - 2, 788, 24);
+        AddLbl(leftCard, "Observación", c1L, y); _txtObs.SetBounds(c1X, y - 2, 650, 24);
 
-        // Weight Summary Boxes
-        y += 38;
-        var weightStrip = new Panel { Location = new Point(c1L, y), Size = new Size(887, 68), BackColor = AppTheme.NavyDark };
-        AddWeightBox(weightStrip, "PESO BRUTO (kg)", _numBruto, 16);
-        AddWeightBox(weightStrip, "PESO TARA (kg)", _numTara, 305);
-        AddWeightBox(weightStrip, "PESO NETO (kg)", _numNeto, 594);
+        y += 36;
+        _lblIngresoInfo.Location = new Point(c1L, y);
+        _lblIngresoInfo.Size = new Size(740, 22);
+        _lblIngresoInfo.Font = AppTheme.FontBodyBold;
+        _lblIngresoInfo.ForeColor = AppTheme.NavyPrimary;
+        _lblIngresoInfo.Text = "Ingreso: Pendiente de primer pesaje.";
 
-        _lblMsg.Location = new Point(c1L, y + 74);
-        _lblMsg.Size = new Size(887, 22);
-        _lblMsg.Font = new Font("Segoe UI", 9.25f, FontStyle.Bold);
-        _lblMsg.ForeColor = AppTheme.NavyPrimary;
+        y += 30;
+        _lblMsg.Location = new Point(c1L, y);
+        _lblMsg.Size = new Size(740, 40);
+        _lblMsg.Font = AppTheme.FontBodyBold;
+        _lblMsg.ForeColor = AppTheme.NavyDark;
+        _lblMsg.Text = "Formulario listo. Ingrese patente o seleccione un camión en tránsito.";
 
-        formCard.Controls.AddRange([
+        // Autoresolución al salir de códigos digitados manualmente
+        _txtClienteRut.Leave += async (_, _) => await ResolveClienteTextAsync();
+        _txtProductoCod.Leave += async (_, _) => await ResolveProductoTextAsync();
+        _txtOrigenCod.Leave += async (_, _) => await ResolveOrigenTextAsync();
+        _txtDestinoCod.Leave += async (_, _) => await ResolveDestinoTextAsync();
+        _txtTranspCod.Leave += async (_, _) => await ResolveTranspTextAsync();
+        _txtChoferCod.Leave += async (_, _) => await ResolveChoferTextAsync();
+
+        leftCard.Controls.AddRange([
             _txtPatente, bPat, _txtAcoplado, _cmbTipoPesaje, _txtFolio,
             _txtClienteRut, _txtClienteNombre, _txtProductoCod, _txtProductoNombre,
             _txtOrigenCod, _txtOrigenNombre, _txtDestinoCod, _txtDestinoNombre,
             _txtTranspCod, _txtTranspNombre, _txtChoferCod, _txtChoferNombre,
             _txtGuia, _numNetoInf, _numTipoMop, _numLargo, _chkUsarTaraReg,
-            _txtObs, weightStrip, _lblMsg
+            _txtObs, _lblIngresoInfo, _lblMsg
         ]);
 
-        // Transit Grid with Title Bar
+        // Panel Derecho: Bruto / Tara / Neto + Referencia Tara + 4 botones clásicos (Pesar Camión, Pesar Carro, Tara Reg., Grabar)
+        var rightCard = new Panel
+        {
+            Location = new Point(786, 10),
+            Size = new Size(462, 342),
+            BackColor = AppTheme.SurfaceCard,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+
+        var weightsBand = new Panel { Location = new Point(12, 12), Size = new Size(266, 146), BackColor = AppTheme.NavyDark, Padding = new Padding(10) };
+        AddVerticalWeightBox(weightsBand, "BRUTO", _numBruto, 10);
+        AddVerticalWeightBox(weightsBand, "TARA", _numTara, 56);
+        AddVerticalWeightBox(weightsBand, "NETO", _numNeto, 102);
+
+        _lblTaraRef.Location = new Point(286, 14);
+        _lblTaraRef.Size = new Size(164, 144);
+        _lblTaraRef.BackColor = AppTheme.BackgroundLight;
+        _lblTaraRef.BorderStyle = BorderStyle.FixedSingle;
+        _lblTaraRef.Padding = new Padding(8);
+        _lblTaraRef.Font = AppTheme.FontBody;
+        _lblTaraRef.ForeColor = AppTheme.TextPrimary;
+        _lblTaraRef.Text = "Tara Histórica:\r\n  -\r\nFecha:\r\n  -\r\nHora:\r\n  -";
+
+        _btnPesarCamion.SetBounds(12, 168, 214, 38);
+        AppTheme.StylePrimaryButton(_btnPesarCamion, AppIcon.Truck, "PESAR CAMIÓN", "Capturar peso del camión desde el visor actual", _tt);
+        _btnPesarCamion.Click += (_, _) => CaptureCurrentScaleWeight(isTrailer: false);
+
+        _btnPesarCarro.SetBounds(234, 168, 214, 38);
+        AppTheme.StyleSecondaryButton(_btnPesarCarro, AppIcon.Scale, "PESAR CARRO / 2° PESO", "Capturar segundo peso o peso de acoplado", AppTheme.NavyPrimary, _tt);
+        _btnPesarCarro.Click += (_, _) => CaptureCurrentScaleWeight(isTrailer: true);
+
+        _btnTaraRegPanel.SetBounds(12, 216, 436, 36);
+        AppTheme.StyleSecondaryButton(_btnTaraRegPanel, AppIcon.Tare, "APLICAR TARA REGISTRADA", "Validar vigencia y aplicar tara registrada del camión", AppTheme.AccentAmber, _tt);
+        _btnTaraRegPanel.Click += (_, _) => ApplyRegisteredTare();
+
+        _btnGrabarPanel.SetBounds(12, 264, 436, 46);
+        AppTheme.StylePrimaryButton(_btnGrabarPanel, AppIcon.Save, "GRABAR PESAJE", "Guardar primer pesaje en tránsito o completar salida definitiva", _tt);
+        _btnGrabarPanel.BackColor = AppTheme.AccentEmerald;
+        _btnGrabarPanel.Click += async (_, _) => await SaveWeighingAsync();
+
+        rightCard.Controls.AddRange([weightsBand, _lblTaraRef, _btnPesarCamion, _btnPesarCarro, _btnTaraRegPanel, _btnGrabarPanel]);
+        topContainer.Controls.AddRange([leftCard, rightCard]);
+
+        // Grilla Inferior En Tránsito
         var transitWrapper = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.SurfaceCard };
         var transitTitle = new Label
         {
@@ -241,7 +329,7 @@ public sealed class PesajeWorkspaceControl : UserControl
             Text = "  CAMIONES PENDIENTES EN PLANTA (EN TRÁNSITO) — Doble clic para completar segundo pesaje",
             BackColor = AppTheme.SlateHeader,
             ForeColor = Color.White,
-            Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+            Font = AppTheme.FontBodyBold,
             TextAlign = ContentAlignment.MiddleLeft
         };
         AppTheme.StyleDataGrid(_gridTransito);
@@ -266,14 +354,14 @@ public sealed class PesajeWorkspaceControl : UserControl
         };
         transitWrapper.Controls.AddRange([_gridTransito, transitTitle]);
 
-        split.Panel1.Controls.Add(formCard);
+        split.Panel1.Controls.Add(topContainer);
         split.Panel2.Controls.Add(transitWrapper);
 
         Controls.AddRange([split, toolbar, header]);
     }
 
     private static void AddLbl(Panel parent, string text, int x, int y)
-        => parent.Controls.Add(new Label { Text = text, Location = new Point(x, y + 2), AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold), ForeColor = AppTheme.TextPrimary });
+        => parent.Controls.Add(new Label { Text = text, Location = new Point(x, y + 2), AutoSize = true, Font = AppTheme.FontBodyBold, ForeColor = AppTheme.TextPrimary });
 
     private Button AddSearchBtn(Panel parent, int x, int y, string tip, Func<Task> onClick)
     {
@@ -284,11 +372,11 @@ public sealed class PesajeWorkspaceControl : UserControl
         return btn;
     }
 
-    private static void AddWeightBox(Panel parent, string title, NumericUpDown num, int x)
+    private static void AddVerticalWeightBox(Panel parent, string title, NumericUpDown num, int y)
     {
-        parent.Controls.Add(new Label { Text = title, Location = new Point(x, 6), AutoSize = true, ForeColor = Color.LightSteelBlue, Font = new Font("Segoe UI", 8.5f, FontStyle.Bold) });
-        num.Location = new Point(x, 26);
-        num.Size = new Size(268, 34);
+        parent.Controls.Add(new Label { Text = title, Location = new Point(10, y + 6), AutoSize = true, ForeColor = AppTheme.GoldAccent, Font = new Font("Segoe UI", 10f, FontStyle.Bold) });
+        num.Location = new Point(82, y);
+        num.Size = new Size(172, 34);
         num.BackColor = AppTheme.LcdBackground;
         num.ForeColor = AppTheme.LcdDigitOn;
         num.Font = new Font("Consolas", 15f, FontStyle.Bold);
@@ -308,7 +396,14 @@ public sealed class PesajeWorkspaceControl : UserControl
         });
     }
 
-    private void CaptureCurrentScaleWeight()
+    private void OpenVisorDialog()
+    {
+        using var dlg = new VisorSetupForm(_services);
+        dlg.ShowDialog(this);
+        _lblEstadoBalanza.Text = _services.Scale.StatusDescription;
+    }
+
+    private void CaptureCurrentScaleWeight(bool isTrailer)
     {
         if (!_currentStable && !_services.TestMode)
         {
@@ -316,7 +411,7 @@ public sealed class PesajeWorkspaceControl : UserControl
             _lblMsg.ForeColor = AppTheme.AccentDanger;
             return;
         }
-        AssignCapturedWeight(_currentWeightKg);
+        AssignCapturedWeight(_currentWeightKg, isTrailer);
     }
 
     private void CaptureManualWeight()
@@ -325,22 +420,22 @@ public sealed class PesajeWorkspaceControl : UserControl
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
             _services.Scale.EmitSimulatedWeight(dlg.WeightKg, stable: true);
-            AssignCapturedWeight(dlg.WeightKg);
+            AssignCapturedWeight(dlg.WeightKg, isTrailer: _transitoActivo is not null || _numBruto.Value > 0);
         }
     }
 
-    private void AssignCapturedWeight(int weightKg)
+    private void AssignCapturedWeight(int weightKg, bool isTrailer)
     {
         if (weightKg <= 0)
         {
-            _lblMsg.Text = "El peso capturado debe ser mayor a cero kg.";
+            _lblMsg.Text = "El peso capturado debe ser mayor a cero kg (use 'Visor / COM' o 'Ingreso Manual').";
             _lblMsg.ForeColor = AppTheme.AccentDanger;
             return;
         }
 
-        if (_transitoActivo is null)
+        if (_transitoActivo is null && !isTrailer)
         {
-            if (_cmbTipoPesaje.SelectedIndex == 0) // Recepción entra cargado -> Bruto
+            if (_cmbTipoPesaje.SelectedIndex == 0)
             {
                 _numBruto.Value = weightKg;
                 if (_chkUsarTaraReg.Checked && _camionActual is not null)
@@ -348,26 +443,23 @@ public sealed class PesajeWorkspaceControl : UserControl
                     _numTara.Value = _camionActual.Tara;
                 }
             }
-            else // Despacho/Mov entra por lo general vacío -> o primer peso en Bruto/Tara según convención
+            else
             {
                 if (_numBruto.Value == 0) _numBruto.Value = weightKg;
                 else _numTara.Value = weightKg;
             }
         }
+        else if (_transitoActivo is not null)
+        {
+            if (_transitoActivo.Bruto > 0 && _numTara.Value == 0) _numTara.Value = weightKg;
+            else if (_transitoActivo.Tara > 0 && _numBruto.Value == 0) _numBruto.Value = weightKg;
+            else _numTara.Value = weightKg;
+        }
         else
         {
-            if (_transitoActivo.Bruto > 0 && _numTara.Value == 0)
-            {
-                _numTara.Value = weightKg;
-            }
-            else if (_transitoActivo.Tara > 0 && _numBruto.Value == 0)
-            {
-                _numBruto.Value = weightKg;
-            }
-            else
-            {
-                _numTara.Value = weightKg;
-            }
+            // Pesar Carro en primer/único pesaje
+            if (_numBruto.Value == 0) _numBruto.Value = weightKg;
+            else _numTara.Value = weightKg;
         }
 
         RecalculateNet();
@@ -397,6 +489,7 @@ public sealed class PesajeWorkspaceControl : UserControl
 
         _transitoActivo = null;
         _lblModoOperacion.Text = "MODO: PRIMER PESAJE / NUEVO INGRESO";
+        _lblIngresoInfo.Text = $"Ingreso proyectado: {DateTime.Today:dd/MM/yyyy} {DateTime.Now:HH:mm} | Op: {_services.UsuarioActual?.Nombre}";
         _camionActual = await _services.Catalogs.GetCamionAsync(pat);
         if (_camionActual is not null)
         {
@@ -405,10 +498,17 @@ public sealed class PesajeWorkspaceControl : UserControl
             _txtChoferCod.Text = _camionActual.Chofer;
             _numTipoMop.Value = Math.Clamp((int)_camionActual.TipoMop, 0, 9999);
             _numLargo.Value = Math.Clamp((int)_camionActual.Largo, 0, 90);
+            _lblTaraRef.Text = $"Tara Histórica:\r\n  {_camionActual.Tara:N0} kg\r\nFecha:\r\n  {_camionActual.FechaTara?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? "-"}\r\nHora:\r\n  {_camionActual.HoraTara}";
             _lblMsg.Text = _camionActual.Tara <= 0
                 ? "Advertencia: la tara histórica del camión está en 0."
                 : $"Camión encontrado. Última tara registrada: {_camionActual.Tara:N0} kg.";
             _lblMsg.ForeColor = AppTheme.NavyPrimary;
+            await ResolveTranspTextAsync();
+            await ResolveChoferTextAsync();
+        }
+        else
+        {
+            _lblTaraRef.Text = "Tara Histórica:\r\n  (Nuevo)\r\nFecha:\r\n  -\r\nHora:\r\n  -";
         }
     }
 
@@ -436,8 +536,9 @@ public sealed class PesajeWorkspaceControl : UserControl
         _numTara.Value = Math.Clamp(tr.Tara, 0, 200_000);
         RecalculateNet();
 
+        _lblIngresoInfo.Text = $"Ingreso Tránsito: {tr.FechaIngreso:dd/MM/yyyy} {tr.HoraIngreso} | Op. ID {tr.UsuarioIngreso}";
         _lblModoOperacion.Text = $"MODO: SEGUNDO PESAJE (Folio Tránsito #{tr.FolioPesaje})";
-        _lblMsg.Text = $"Vehículo {tr.Patente} cargado desde tránsito. Capture el segundo peso para finalizar.";
+        _lblMsg.Text = $"Vehículo {tr.Patente} cargado desde tránsito. Capture el segundo peso y presione GRABAR PESAJE.";
         _lblMsg.ForeColor = AppTheme.AccentEmerald;
     }
 
@@ -453,6 +554,7 @@ public sealed class PesajeWorkspaceControl : UserControl
         _numTara.Value = _camionActual.Tara;
         RecalculateNet();
         _lblMsg.Text = $"Tara registrada aplicada: {_camionActual.Tara:N0} kg.";
+        _lblMsg.ForeColor = AppTheme.AccentEmerald;
     }
 
     private async Task SaveWeighingAsync()
@@ -478,108 +580,119 @@ public sealed class PesajeWorkspaceControl : UserControl
             return;
         }
 
-        DateTime now = DateTime.Now;
-        var tipo = (TipoPesaje)(_cmbTipoPesaje.SelectedIndex + 1);
-        short userId = _services.UsuarioActual?.Id ?? 0;
-
-        // Si falta uno de los pesos y no usa tara registrada -> queda en DBTRANSITO (Primer Pesaje)
-        if (_transitoActivo is null && (bruto == 0 || tara == 0))
+        try
         {
-            var tr = new RegistroTransito
+            DateTime now = DateTime.Now;
+            var tipo = (TipoPesaje)(_cmbTipoPesaje.SelectedIndex + 1);
+            short userId = _services.UsuarioActual?.Id ?? 0;
+
+            if (_transitoActivo is null && (bruto == 0 || tara == 0))
             {
+                var tr = new RegistroTransito
+                {
+                    Patente = pat,
+                    Acoplado = ChileanValidators.NormalizarPatente(_txtAcoplado.Text),
+                    Producto = _txtProductoCod.Text.Trim(),
+                    Cliente = _txtClienteRut.Text.Trim(),
+                    Origen = _txtOrigenCod.Text.Trim(),
+                    Destino = _txtDestinoCod.Text.Trim(),
+                    GuiaDespacho = _txtGuia.Text.Trim(),
+                    NetoInformado = (int)_numNetoInf.Value,
+                    FechaIngreso = now.Date,
+                    HoraIngreso = now.ToString("HH:mm", CultureInfo.InvariantCulture),
+                    Bruto = bruto,
+                    Tara = tara,
+                    TipoMop = (short)_numTipoMop.Value,
+                    Largo = (short)_numLargo.Value,
+                    MaxBruto = _maxBrutoMop,
+                    Chofer = _txtChoferCod.Text.Trim(),
+                    Observacion1 = _txtObs.Text.Trim(),
+                    Transportista = _txtTranspCod.Text.Trim(),
+                    TipoPesaje = tipo,
+                    UsuarioIngreso = userId
+                };
+                int folioTr = await _services.Weighing.RegistrarIngresoTransitoAsync(tr);
+                await RefreshTransitoAsync();
+                MessageBox.Show(this, $"Ingreso a planta registrado en Tránsito con Folio #{folioTr}.", "Primer Pesaje", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                ClearForm();
+                return;
+            }
+
+            if (bruto <= 0 || tara <= 0)
+            {
+                MessageBox.Show(this, "Para cerrar el pesaje se requieren ambos pesos (Bruto y Tara > 0).", "Validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var p = new Pesaje
+            {
+                FolioPesaje = _transitoActivo?.FolioPesaje ?? 0,
                 Patente = pat,
                 Acoplado = ChileanValidators.NormalizarPatente(_txtAcoplado.Text),
+                FolioPesajeMop = _folioMopAsociado,
                 Producto = _txtProductoCod.Text.Trim(),
+                NombreProducto = _txtProductoNombre.Text.Trim(),
                 Cliente = _txtClienteRut.Text.Trim(),
+                NombreCliente = _txtClienteNombre.Text.Trim(),
                 Origen = _txtOrigenCod.Text.Trim(),
+                NombreOrigen = _txtOrigenNombre.Text.Trim(),
                 Destino = _txtDestinoCod.Text.Trim(),
+                NombreDestino = _txtDestinoNombre.Text.Trim(),
                 GuiaDespacho = _txtGuia.Text.Trim(),
                 NetoInformado = (int)_numNetoInf.Value,
-                FechaIngreso = now.Date,
-                HoraIngreso = now.ToString("HH:mm", CultureInfo.InvariantCulture),
+                FechaIngreso = _transitoActivo?.FechaIngreso ?? now.Date,
+                HoraIngreso = _transitoActivo?.HoraIngreso ?? now.ToString("HH:mm", CultureInfo.InvariantCulture),
+                FechaSalida = now.Date,
+                HoraSalida = now.ToString("HH:mm", CultureInfo.InvariantCulture),
                 Bruto = bruto,
                 Tara = tara,
+                Neto = WeighingCalculator.CalcularNeto(bruto, tara),
                 TipoMop = (short)_numTipoMop.Value,
                 Largo = (short)_numLargo.Value,
                 MaxBruto = _maxBrutoMop,
+                EstadoMop = _estadoMopActual,
                 Chofer = _txtChoferCod.Text.Trim(),
+                NombreChofer = _txtChoferNombre.Text.Trim(),
                 Observacion1 = _txtObs.Text.Trim(),
                 Transportista = _txtTranspCod.Text.Trim(),
+                NombreTransportista = _txtTranspNombre.Text.Trim(),
+                TaraRegistrada = _chkUsarTaraReg.Checked,
                 TipoPesaje = tipo,
-                UsuarioIngreso = userId
+                UsuarioIngreso = _transitoActivo?.UsuarioIngreso ?? userId,
+                NombreUsuarioIngreso = _services.UsuarioActual?.Nombre ?? string.Empty,
+                UsuarioSalida = userId,
+                NombreUsuarioSalida = _services.UsuarioActual?.Nombre ?? string.Empty
             };
-            int folioTr = await _services.Weighing.RegistrarIngresoTransitoAsync(tr);
+
+            int folioFinal = await _services.Weighing.CompletarPesajeAsync(p);
+            p.FolioPesaje = folioFinal;
             await RefreshTransitoAsync();
-            MessageBox.Show(this, $"Ingreso a planta registrado en Tránsito con Folio #{folioTr}.", "Primer Pesaje", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            if (PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ImprimirTicket))
+            {
+                bool print = !_services.ConfigActual.ConfirmarImpresionTicket ||
+                             MessageBox.Show(this, $"Pesaje #{folioFinal} guardado (Neto: {p.Neto:N0} kg).\r\n¿Desea imprimir / previsualizar el ticket?", "Pesaje Completado", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+                if (print)
+                {
+                    short copies = (short)Math.Clamp(_services.ConfigActual.NroCopiasTicket, 1, 20);
+                    using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(
+                        p, _services.BasculaActual, _services.ConfigActual, copies, IconCatalog.GetCorporateLogo());
+                    using var prev = new PrintPreviewDialog { Document = doc, Width = 840, Height = 640 };
+                    prev.ShowDialog(this);
+                }
+            }
+            else
+            {
+                MessageBox.Show(this, $"Pesaje #{folioFinal} completado. Peso Neto: {p.Neto:N0} kg.", "Pesaje Completado", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+
             ClearForm();
-            return;
         }
-
-        if (bruto <= 0 || tara <= 0)
+        catch (Exception ex)
         {
-            MessageBox.Show(this, "Para cerrar el pesaje se requieren ambos pesos (Bruto y Tara > 0).", "Validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+            AppLogger.Error("Pesaje", "Error guardando pesaje comercial.", ex);
+            MessageBox.Show(this, $"Error guardando pesaje:\r\n{ex.Message}", "Error BD", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
-
-        // Segundo Pesaje o Pesaje Único con Tara Registrada -> Guardar en DBPESAJES
-        var p = new Pesaje
-        {
-            FolioPesaje = _transitoActivo?.FolioPesaje ?? 0,
-            Patente = pat,
-            Acoplado = ChileanValidators.NormalizarPatente(_txtAcoplado.Text),
-            FolioPesajeMop = _folioMopAsociado,
-            Producto = _txtProductoCod.Text.Trim(),
-            NombreProducto = _txtProductoNombre.Text.Trim(),
-            Cliente = _txtClienteRut.Text.Trim(),
-            NombreCliente = _txtClienteNombre.Text.Trim(),
-            Origen = _txtOrigenCod.Text.Trim(),
-            NombreOrigen = _txtOrigenNombre.Text.Trim(),
-            Destino = _txtDestinoCod.Text.Trim(),
-            NombreDestino = _txtDestinoNombre.Text.Trim(),
-            GuiaDespacho = _txtGuia.Text.Trim(),
-            NetoInformado = (int)_numNetoInf.Value,
-            FechaIngreso = _transitoActivo?.FechaIngreso ?? now.Date,
-            HoraIngreso = _transitoActivo?.HoraIngreso ?? now.ToString("HH:mm", CultureInfo.InvariantCulture),
-            FechaSalida = now.Date,
-            HoraSalida = now.ToString("HH:mm", CultureInfo.InvariantCulture),
-            Bruto = bruto,
-            Tara = tara,
-            Neto = WeighingCalculator.CalcularNeto(bruto, tara),
-            TipoMop = (short)_numTipoMop.Value,
-            Largo = (short)_numLargo.Value,
-            MaxBruto = _maxBrutoMop,
-            EstadoMop = _estadoMopActual,
-            Chofer = _txtChoferCod.Text.Trim(),
-            NombreChofer = _txtChoferNombre.Text.Trim(),
-            Observacion1 = _txtObs.Text.Trim(),
-            Transportista = _txtTranspCod.Text.Trim(),
-            NombreTransportista = _txtTranspNombre.Text.Trim(),
-            TaraRegistrada = _chkUsarTaraReg.Checked,
-            TipoPesaje = tipo,
-            UsuarioIngreso = _transitoActivo?.UsuarioIngreso ?? userId,
-            NombreUsuarioIngreso = _services.UsuarioActual?.Nombre ?? string.Empty,
-            UsuarioSalida = userId,
-            NombreUsuarioSalida = _services.UsuarioActual?.Nombre ?? string.Empty
-        };
-
-        int folioFinal = await _services.Weighing.CompletarPesajeAsync(p);
-        p.FolioPesaje = folioFinal;
-        await RefreshTransitoAsync();
-
-        if (PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ImprimirTicket) &&
-            (!_services.ConfigActual.ConfirmarImpresionTicket ||
-             MessageBox.Show(this, $"Pesaje #{folioFinal} guardado (Neto: {p.Neto:N0} kg).\r\n¿Desea imprimir/previsualizar el ticket?", "Pesaje Completado", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes))
-        {
-            using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(p, _services.BasculaActual, _services.ConfigActual);
-            using var prev = new PrintPreviewDialog { Document = doc, Width = 780, Height = 580 };
-            prev.ShowDialog(this);
-        }
-        else
-        {
-            MessageBox.Show(this, $"Pesaje #{folioFinal} completado. Peso Neto: {p.Neto:N0} kg.", "Pesaje Completado", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
-
-        ClearForm();
     }
 
     private async Task DeleteSelectedTransitAsync()
@@ -638,8 +751,12 @@ public sealed class PesajeWorkspaceControl : UserControl
             MessageBox.Show(this, $"No se encontró el folio #{dlg.Folio}.", "Búsqueda", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(p, _services.BasculaActual, _services.ConfigActual);
-        using var prev = new PrintPreviewDialog { Document = doc, Width = 780, Height = 580 };
+        using var copDlg = new TicketCopiesDialog(_services.ConfigActual.NroCopiasTicket);
+        if (copDlg.ShowDialog(this) != DialogResult.OK) return;
+
+        using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(
+            p, _services.BasculaActual, _services.ConfigActual, copDlg.Copies, IconCatalog.GetCorporateLogo());
+        using var prev = new PrintPreviewDialog { Document = doc, Width = 840, Height = 640 };
         prev.ShowDialog(this);
     }
 
@@ -657,9 +774,59 @@ public sealed class PesajeWorkspaceControl : UserControl
         _txtChoferCod.Text = _txtChoferNombre.Text = _txtGuia.Text = _txtObs.Text = string.Empty;
         _numNetoInf.Value = _numTipoMop.Value = _numLargo.Value = _numBruto.Value = _numTara.Value = _numNeto.Value = 0;
         _chkUsarTaraReg.Checked = false;
+        _lblTaraRef.Text = "Tara Histórica:\r\n  -\r\nFecha:\r\n  -\r\nHora:\r\n  -";
+        _lblIngresoInfo.Text = "Ingreso: Pendiente de primer pesaje.";
         _lblModoOperacion.Text = "MODO: PRIMER PESAJE / NUEVO INGRESO";
         _lblMsg.Text = "Formulario listo para nuevo pesaje.";
         _lblMsg.ForeColor = AppTheme.NavyPrimary;
+    }
+
+    private async Task ResolveClienteTextAsync()
+    {
+        string rut = _txtClienteRut.Text.Trim();
+        if (string.IsNullOrEmpty(rut)) { _txtClienteNombre.Text = string.Empty; return; }
+        Cliente? c = await _services.Catalogs.GetClienteAsync(rut);
+        if (c is not null) _txtClienteNombre.Text = c.Nombre;
+    }
+
+    private async Task ResolveProductoTextAsync()
+    {
+        string cod = _txtProductoCod.Text.Trim();
+        if (string.IsNullOrEmpty(cod)) { _txtProductoNombre.Text = string.Empty; return; }
+        Producto? p = (await _services.Catalogs.GetProductosAsync()).FirstOrDefault(x => string.Equals(x.Codigo, cod, StringComparison.OrdinalIgnoreCase));
+        if (p is not null) _txtProductoNombre.Text = p.Descripcion;
+    }
+
+    private async Task ResolveOrigenTextAsync()
+    {
+        string cod = _txtOrigenCod.Text.Trim();
+        if (string.IsNullOrEmpty(cod)) { _txtOrigenNombre.Text = string.Empty; return; }
+        Origen? o = (await _services.Catalogs.GetOrigenesAsync()).FirstOrDefault(x => string.Equals(x.Codigo, cod, StringComparison.OrdinalIgnoreCase));
+        if (o is not null) _txtOrigenNombre.Text = o.Descripcion;
+    }
+
+    private async Task ResolveDestinoTextAsync()
+    {
+        string cod = _txtDestinoCod.Text.Trim();
+        if (string.IsNullOrEmpty(cod)) { _txtDestinoNombre.Text = string.Empty; return; }
+        Destino? d = (await _services.Catalogs.GetDestinosAsync()).FirstOrDefault(x => string.Equals(x.Codigo, cod, StringComparison.OrdinalIgnoreCase));
+        if (d is not null) _txtDestinoNombre.Text = d.Descripcion;
+    }
+
+    private async Task ResolveTranspTextAsync()
+    {
+        string cod = _txtTranspCod.Text.Trim();
+        if (string.IsNullOrEmpty(cod)) { _txtTranspNombre.Text = string.Empty; return; }
+        Transportista? t = (await _services.Catalogs.GetTransportistasAsync()).FirstOrDefault(x => string.Equals(x.Rut, cod, StringComparison.OrdinalIgnoreCase));
+        if (t is not null) _txtTranspNombre.Text = t.Nombre;
+    }
+
+    private async Task ResolveChoferTextAsync()
+    {
+        string cod = _txtChoferCod.Text.Trim();
+        if (string.IsNullOrEmpty(cod)) { _txtChoferNombre.Text = string.Empty; return; }
+        Chofer? ch = (await _services.Catalogs.GetChoferesAsync()).FirstOrDefault(x => string.Equals(x.Rut, cod, StringComparison.OrdinalIgnoreCase));
+        if (ch is not null) _txtChoferNombre.Text = ch.Nombre;
     }
 
     private async Task LookupCamionAsync()

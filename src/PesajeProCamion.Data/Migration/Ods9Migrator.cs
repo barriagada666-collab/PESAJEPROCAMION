@@ -453,7 +453,7 @@ public static class Ods9Migrator
                 [
                     ("@FP", folio.Value), ("@PAT", pat), ("@ACO", ChileanValidators.NormalizarPatente(Str(r, "ACOPLADO", 8))),
                     ("@FM", Int(r, "FLPESAJEMOP")), ("@PR", Str(r, "PRODUCTO", 12)), ("@CL", Str(r, "CLIENTE", 10)),
-                    ("@OR", Str(r, "ORIGEN", 10)), ("@DE", Str(r, "DESTINO", 10)), ("@GD", Str(r, "GDESPACHO", 12)),
+                    ("@OR", Str(r, "ORIGEN", 10)), ("@DE", Str(r, "DESTINO", 10)), ("@GD", Str(r, "GDESPACHO", 50)),
                     ("@NI", Int(r, "NETOINF")),
                     ("@FI", Dt(r, "FECHAING") ?? DateTime.Today), ("@HI", Str(r, "HORAING", 5)),
                     ("@FS", Dt(r, "FECHASAL")), ("@HS", Str(r, "HORASAL", 5)),
@@ -498,7 +498,7 @@ public static class Ods9Migrator
                     ("@ACO", ChileanValidators.NormalizarPatente(Str(r, "ACOPLADO", 8))),
                     ("@PR", Str(r, "PRODUCTO", 12)), ("@CL", Str(r, "CLIENTE", 10)),
                     ("@OR", Str(r, "ORIGEN", 10)), ("@DE", Str(r, "DESTINO", 10)),
-                    ("@GD", Str(r, "GDESPACHO", 12)), ("@NI", Int(r, "NETOINF")),
+                    ("@GD", Str(r, "GDESPACHO", 50)), ("@NI", Int(r, "NETOINF")),
                     ("@FI", Dt(r, "FECHAING") ?? DateTime.Today), ("@HI", Str(r, "HORAING", 5)),
                     ("@BR", Int(r, "BRUTO")), ("@TA", Int(r, "TARA")),
                     ("@TM", Sh(r, "TMOP")), ("@LA", Sh(r, "LARGO")), ("@MB", Int(r, "MAXBRUTO")),

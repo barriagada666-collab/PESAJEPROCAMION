@@ -87,3 +87,50 @@ public sealed class FolioTicketDialog : Form
 
     public int Folio { get; private set; }
 }
+
+/// <summary>Diálogo limpio para elegir cantidad de copias del Ticket de Pesaje (igual que mockup Ticket de Pesaje).</summary>
+public sealed class TicketCopiesDialog : Form
+{
+    private readonly NumericUpDown _numCopias = new();
+
+    public TicketCopiesDialog(int initialCopies = 1)
+    {
+        Text = "Ticket de Pesaje";
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        StartPosition = FormStartPosition.CenterParent;
+        ClientSize = new Size(340, 148);
+        BackColor = AppTheme.BackgroundLight;
+        AppTheme.ApplyFormIcon(this);
+
+        Controls.Add(new Label
+        {
+            Text = "Nro de Copias:",
+            Location = new Point(44, 30),
+            AutoSize = true,
+            Font = AppTheme.FontBodyBold,
+            ForeColor = AppTheme.TextPrimary
+        });
+
+        _numCopias.SetBounds(178, 25, 92, 30);
+        _numCopias.Minimum = 1;
+        _numCopias.Maximum = 20;
+        _numCopias.Font = new Font("Segoe UI", 12f, FontStyle.Bold);
+        _numCopias.Value = Math.Clamp(initialCopies, 1, 20);
+
+        var btnOk = new Button { Location = new Point(44, 86), Size = new Size(120, 36) };
+        AppTheme.StylePrimaryButton(btnOk, AppIcon.Print, "Imprimir", "Previsualizar e imprimir copias seleccionadas");
+        btnOk.Click += (_, _) => { Copies = (short)_numCopias.Value; DialogResult = DialogResult.OK; Close(); };
+
+        var btnCancel = new Button { Location = new Point(176, 86), Size = new Size(118, 36) };
+        AppTheme.StyleSecondaryButton(btnCancel, AppIcon.Cancel, "Cancelar", "Cancelar impresión");
+        btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
+
+        AcceptButton = btnOk;
+        CancelButton = btnCancel;
+        Controls.AddRange([_numCopias, btnOk, btnCancel]);
+    }
+
+    public short Copies { get; private set; } = 1;
+}

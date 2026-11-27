@@ -1,24 +1,47 @@
 using System.Text.Json;
 using FirebirdSql.Data.FirebirdClient;
 using PesajeProCamion.Data.Configuration;
+using PesajeProCamion.Domain.Diagnostics;
 
 namespace PesajeProCamion.App.Services;
 
-/// <summary>Persistencia local de configuración de conexión Firebird y preferencias de ejecución.</summary>
+/// <summary>
+/// Persistencia de configuración Firebird compatible con instalación corporativa (%ProgramData%)
+/// y modo portable cero-dependencias (archivo appsettings.json junto al ejecutable).
+/// </summary>
 public sealed class AppConfigStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    public static string ConfigFilePath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PesajeProCamion", "appsettings.json");
+    public static bool IsPortableMode =>
+        File.Exists(Path.Combine(AppContext.BaseDirectory, "portable.flag")) ||
+        File.Exists(Path.Combine(AppContext.BaseDirectory, "appsettings.json")) ||
+        !AppContext.BaseDirectory.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), StringComparison.OrdinalIgnoreCase);
+
+    public static string ConfigFilePath
+    {
+        get
+        {
+            string localPortable = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            if (File.Exists(localPortable) || File.Exists(Path.Combine(AppContext.BaseDirectory, "portable.flag")))
+            {
+                return localPortable;
+            }
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PesajeProCamion", "appsettings.json");
+        }
+    }
 
     public static DatabaseSettings LoadDatabaseSettings()
     {
-        try
+        foreach (string path in GetReadCandidates())
         {
-            if (File.Exists(ConfigFilePath))
+            try
             {
-                string json = File.ReadAllText(ConfigFilePath);
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+                string json = File.ReadAllText(path);
                 StoredConfig? cfg = JsonSerializer.Deserialize<StoredConfig>(json);
                 if (cfg is not null && !string.IsNullOrWhiteSpace(cfg.DatabasePath))
                 {
@@ -30,14 +53,17 @@ public sealed class AppConfigStore
                         UserId = cfg.UserId,
                         Password = cfg.Password,
                         Charset = string.IsNullOrWhiteSpace(cfg.Charset) ? "UTF8" : cfg.Charset,
+                        Dialect = cfg.Dialect is 1 or 3 ? cfg.Dialect : 3,
+                        ConnectionTimeout = cfg.ConnectionTimeout > 0 ? cfg.ConnectionTimeout : 10,
+                        RawNetworkPath = cfg.RawNetworkPath,
                         ServerType = FbServerType.Default
                     };
                 }
             }
-        }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
-        {
-            // Fallback a configuración por defecto si el archivo local está dañado
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            {
+                AppLogger.Warn("Config", $"No se pudo leer '{path}': {ex.Message}");
+            }
         }
 
         return new DatabaseSettings();
@@ -46,7 +72,28 @@ public sealed class AppConfigStore
     public static void SaveDatabaseSettings(DatabaseSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        string? dir = Path.GetDirectoryName(ConfigFilePath);
+        string targetPath = ConfigFilePath;
+        try
+        {
+            WriteConfigFile(targetPath, settings);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            string fallback = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PesajeProCamion", "appsettings.json");
+            WriteConfigFile(fallback, settings);
+        }
+    }
+
+    private static IEnumerable<string> GetReadCandidates()
+    {
+        yield return Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PesajeProCamion", "appsettings.json");
+        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PesajeProCamion", "appsettings.json");
+    }
+
+    private static void WriteConfigFile(string path, DatabaseSettings settings)
+    {
+        string? dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrWhiteSpace(dir))
         {
             Directory.CreateDirectory(dir);
@@ -59,9 +106,12 @@ public sealed class AppConfigStore
             DatabasePath = settings.DatabasePath,
             UserId = settings.UserId,
             Password = settings.Password,
-            Charset = settings.Charset
+            Charset = settings.Charset,
+            Dialect = settings.Dialect,
+            ConnectionTimeout = settings.ConnectionTimeout,
+            RawNetworkPath = settings.RawNetworkPath
         };
-        File.WriteAllText(ConfigFilePath, JsonSerializer.Serialize(payload, JsonOptions));
+        File.WriteAllText(path, JsonSerializer.Serialize(payload, JsonOptions));
     }
 
     private sealed class StoredConfig
@@ -72,5 +122,8 @@ public sealed class AppConfigStore
         public string UserId { get; set; } = "SYSDBA";
         public string Password { get; set; } = "masterkey";
         public string Charset { get; set; } = "UTF8";
+        public int Dialect { get; set; } = 3;
+        public int ConnectionTimeout { get; set; } = 10;
+        public string? RawNetworkPath { get; set; }
     }
 }

@@ -5,7 +5,7 @@ using PesajeProCamion.App.UI.Theme;
 
 namespace PesajeProCamion.App.UI.Dialogs;
 
-/// <summary>Información simplificada y dinámica de la versión e instalación actual.</summary>
+/// <summary>Información corporativa de versión e instalación con logo oficial y metadatos genéricos limpios.</summary>
 public sealed class AcercaForm : Form
 {
     public AcercaForm(AppServices services)
@@ -16,35 +16,68 @@ public sealed class AcercaForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(460, 260);
+        ClientSize = new Size(500, 300);
         BackColor = AppTheme.SurfaceCard;
+        AppTheme.ApplyFormIcon(this);
 
-        var top = new Panel { Dock = DockStyle.Top, Height = 86, BackColor = AppTheme.NavyDark };
-        var pic = new PictureBox { Location = new Point(16, 14), Size = new Size(88, 56), SizeMode = PictureBoxSizeMode.Zoom, Image = IconCatalog.RenderTruckBadge(88, 56) };
-        var title = new Label { Text = "PESAJE PRO CAMIÓN v2.0", Location = new Point(116, 16), AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 14f, FontStyle.Bold) };
-        var sub = new Label { Text = "Plataforma .NET 10 + Firebird SQL", Location = new Point(118, 46), AutoSize = true, ForeColor = Color.FromArgb(190, 212, 240), Font = new Font("Segoe UI", 9.25f) };
-        top.Controls.AddRange([pic, title, sub]);
+        var top = new Panel { Dock = DockStyle.Top, Height = 92 };
+        top.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, top.ClientRectangle);
 
-        string empresa = string.IsNullOrWhiteSpace(services.BasculaActual.NombreEmpresa) ? "Instalación Estándar" : services.BasculaActual.NombreEmpresa;
+        var logoCard = new Panel { Location = new Point(16, 14), Size = new Size(106, 62), BackColor = Color.White };
+        var pic = new PictureBox
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(4),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            Image = IconCatalog.GetCorporateLogo() ?? IconCatalog.RenderTruckBadge(98, 54)
+        };
+        logoCard.Controls.Add(pic);
+
+        var title = new Label
+        {
+            Text = "PesajeProCamion — v2.0.0 LTS",
+            Location = new Point(136, 18),
+            AutoSize = true,
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            Font = new Font("Segoe UI", 14f, FontStyle.Bold)
+        };
+        var sub = new Label
+        {
+            Text = "Plataforma .NET 10 Zero-Dependencias + Firebird SQL",
+            Location = new Point(138, 50),
+            AutoSize = true,
+            ForeColor = AppTheme.GoldAccent,
+            BackColor = Color.Transparent,
+            Font = new Font("Segoe UI", 9.25f, FontStyle.Bold)
+        };
+        top.Controls.AddRange([logoCard, title, sub]);
+
+        string empresa = string.IsNullOrWhiteSpace(services.BasculaActual.NombreEmpresa) ? "Instalación Industrial" : services.BasculaActual.NombreEmpresa;
         string fecha = services.ConfigActual.FechaInstalacion?.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? DateTime.Today.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture);
 
         var lblInfo = new Label
         {
-            Location = new Point(22, 102),
-            Size = new Size(416, 102),
-            Font = new Font("Segoe UI", 9.5f),
+            Location = new Point(22, 108),
+            Size = new Size(454, 128),
+            Font = AppTheme.FontBody,
             ForeColor = AppTheme.TextPrimary,
-            Text = $"Licenciado a: {empresa}\r\n" +
+            Text = $"Organización: {empresa}\r\n" +
                    $"Planta / Báscula: {services.BasculaActual.Descripcion}\r\n" +
+                   $"Servidor BD Activo: {services.DatabaseSettings.DataSource}:{services.DatabaseSettings.Port}/{services.DatabaseSettings.DatabasePath}\r\n" +
                    $"Fecha Instalación: {fecha}\r\n" +
-                   "Sistema unificado de pesaje comercial y control de ejes MOP."
+                   $"Modo Ejecución: {(AppConfigStore.IsPortableMode ? "Portable Autocontenido" : "Instalación Corporativa")}"
         };
 
-        var btnClose = new Button { Location = new Point(332, 212), Size = new Size(106, 32) };
+        var btnLogs = new Button { Location = new Point(22, 248), Size = new Size(148, 34) };
+        AppTheme.StyleSecondaryButton(btnLogs, AppIcon.Logs, "Logs de Errores", "Abrir visor de logs y diagnóstico", AppTheme.AccentAmber);
+        btnLogs.Click += (_, _) => { using var f = new ErrorLogViewerDialog(); f.ShowDialog(this); };
+
+        var btnClose = new Button { Location = new Point(362, 248), Size = new Size(114, 34) };
         AppTheme.StylePrimaryButton(btnClose, AppIcon.Check, "Aceptar", "Cerrar");
         btnClose.Click += (_, _) => Close();
         AcceptButton = btnClose;
 
-        Controls.AddRange([top, lblInfo, btnClose]);
+        Controls.AddRange([top, lblInfo, btnLogs, btnClose]);
     }
 }

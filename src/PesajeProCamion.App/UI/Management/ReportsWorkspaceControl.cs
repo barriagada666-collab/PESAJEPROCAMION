@@ -136,6 +136,21 @@ public sealed class ReportsWorkspaceControl : UserControl
             case 9: // Auditoría Histórica de Modificaciones
             {
                 List<AuditLogEntry> audits = await _services.Security.GetAuditLogsAsync(desde, hasta);
+                if (audits.Count == 0)
+                {
+                    IReadOnlyList<Domain.Diagnostics.AppLogEntry> localEvents = Domain.Diagnostics.AppLogger.GetEntries()
+                        .Where(l => string.Equals(l.Source, "AUDIT", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    SetGrid(
+                        ["Fecha / Hora", "Nivel", "Módulo", "Evento de Auditoría", "Detalle"],
+                        localEvents.Select(l => (IReadOnlyList<object?>)
+                        [
+                            l.Timestamp.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                            l.Level.ToString(), l.Source, l.Message, l.Detail ?? string.Empty
+                        ]).ToList(),
+                        $"Auditoría en BD: 0 (o BD remota legacy sin DBAUDITLOG) | Eventos locales: {localEvents.Count:N0}");
+                    break;
+                }
                 SetGrid(
                     ["ID", "Fecha", "Hora", "Usuario", "Módulo", "Entidad", "Clave", "Acción", "Detalle"],
                     audits.Select(a => (IReadOnlyList<object?>)
@@ -144,6 +159,19 @@ public sealed class ReportsWorkspaceControl : UserControl
                         a.NombreUsuario, a.Modulo, a.Entidad, a.Clave, a.Accion, a.Detalle
                     ]).ToList(),
                     $"Eventos de auditoría registrados: {audits.Count:N0}");
+                break;
+            }
+            case 10: // Logs de Errores y Diagnóstico
+            {
+                IReadOnlyList<Domain.Diagnostics.AppLogEntry> errLogs = Domain.Diagnostics.AppLogger.GetEntries();
+                SetGrid(
+                    ["Fecha / Hora", "Nivel", "Origen", "Mensaje", "Detalle"],
+                    errLogs.Select(l => (IReadOnlyList<object?>)
+                    [
+                        l.Timestamp.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                        l.Level.ToString().ToUpperInvariant(), l.Source, l.Message, l.Detail ?? string.Empty
+                    ]).ToList(),
+                    $"Eventos de diagnóstico / errores registrados: {errLogs.Count:N0}");
                 break;
             }
         }
@@ -171,7 +199,8 @@ public sealed class ReportsWorkspaceControl : UserControl
             "7. Camiones en Tránsito Eliminados",
             "8. Pesajes por Ejes MOP",
             "9. Logs de Ingreso de Usuarios",
-            "10. Histórico de Auditoría y Modificaciones"
+            "10. Histórico de Auditoría y Modificaciones",
+            "11. Logs de Errores y Diagnóstico del Sistema"
         ]);
         _cmbReportType.SelectedIndex = 0;
         _dtDesde.Value = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddYears(-1);

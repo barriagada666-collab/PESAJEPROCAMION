@@ -17,5 +17,10 @@
     <Content Include="Assets\app.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <EmbeddedResource Include="Assets\app.ico" />
+    <Content Include="Assets\logo_cambiaso.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <EmbeddedResource Include="Assets\logo_cambiaso.png" />
   </ItemGroup>
 </Project>

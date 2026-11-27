@@ -38,7 +38,12 @@ public sealed class Ods9BinaryReader
     public Ods9BinaryReader(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        _raw = File.ReadAllBytes(path);
+        using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        using (var ms = new MemoryStream((int)Math.Min(fs.Length, int.MaxValue)))
+        {
+            fs.CopyTo(ms);
+            _raw = ms.ToArray();
+        }
         if (_raw.Length < 1024)
         {
             throw new InvalidDataException("El archivo GDB es demasiado pequeño para contener una cabecera ODS válida.");

@@ -1,13 +1,30 @@
+using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
 using FirebirdSql.Data.FirebirdClient;
 using PesajeProCamion.Data.Configuration;
+using PesajeProCamion.Domain.Diagnostics;
 
 namespace PesajeProCamion.Data.Infrastructure;
 
-/// <summary>Fábrica centralizada de conexiones, transacciones y lectura segura de parámetros/campos Firebird.</summary>
+public sealed record DatabaseCapabilities(
+    bool HasAuditLog,
+    bool HasGenPesaje,
+    bool HasGenMop,
+    bool HasGenUsuario,
+    bool HasGenLogIngreso,
+    bool HasFoliosId,
+    bool HasConfigId,
+    bool HasDemoIdColumn,
+    int PasswordMaxLength)
+{
+    public bool IsLegacySchema => !HasAuditLog || !HasGenPesaje || PasswordMaxLength < 60;
+}
+
+/// <summary>Fábrica centralizada de conexiones, detección de capacidades (moderna/remota legacy), transacciones y lectura segura.</summary>
 public sealed class DatabaseSessionFactory
 {
+    private static readonly ConcurrentDictionary<string, DatabaseCapabilities> CapabilitiesCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly DatabaseSettings _settings;
 
     public DatabaseSessionFactory(DatabaseSettings settings)
@@ -18,11 +35,57 @@ public sealed class DatabaseSessionFactory
 
     public DatabaseSettings Settings => _settings;
 
+    public static void InvalidateCapabilitiesCache() => CapabilitiesCache.Clear();
+
     public async Task<FbConnection> OpenConnectionAsync(CancellationToken ct = default)
     {
         var conn = new FbConnection(_settings.BuildConnectionString());
         await conn.OpenAsync(ct).ConfigureAwait(false);
         return conn;
+    }
+
+    public async Task<DatabaseCapabilities> GetCapabilitiesAsync(CancellationToken ct = default)
+    {
+        string key = _settings.BuildConnectionString();
+        if (CapabilitiesCache.TryGetValue(key, out DatabaseCapabilities? cached))
+        {
+            return cached;
+        }
+        await using FbConnection conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
+        DatabaseCapabilities caps = await DetectCapabilitiesAsync(conn, ct).ConfigureAwait(false);
+        CapabilitiesCache[key] = caps;
+        return caps;
+    }
+
+    public static async Task<DatabaseCapabilities> DetectCapabilitiesAsync(FbConnection conn, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(conn);
+        var generators = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using (var gc = new FbCommand("SELECT TRIM(RDB$GENERATOR_NAME) FROM RDB$GENERATORS WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0", conn))
+        await using (FbDataReader gr = await gc.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            while (await gr.ReadAsync(ct).ConfigureAwait(false))
+            {
+                generators.Add(gr.GetString(0).Trim());
+            }
+        }
+
+        bool hasAudit = await TableExistsAsync(conn, "DBAUDITLOG", ct).ConfigureAwait(false);
+        bool hasFoliosId = await ColumnExistsAsync(conn, "DBFOLIOS", "ID", ct).ConfigureAwait(false);
+        bool hasConfigId = await ColumnExistsAsync(conn, "DBCONFIG", "ID", ct).ConfigureAwait(false);
+        bool hasDemoId = await ColumnExistsAsync(conn, "DEMO1", "ID_MUESTRA", ct).ConfigureAwait(false);
+        int pwLen = await GetColumnLengthAsync(conn, "DBUSUARIOS", "PASS_WORD", 10, ct).ConfigureAwait(false);
+
+        return new DatabaseCapabilities(
+            HasAuditLog: hasAudit,
+            HasGenPesaje: generators.Contains("GEN_FLPESAJE"),
+            HasGenMop: generators.Contains("GEN_FLPESAJEMOP"),
+            HasGenUsuario: generators.Contains("GEN_FLUSUARIO"),
+            HasGenLogIngreso: generators.Contains("GEN_LOGINGRESO"),
+            HasFoliosId: hasFoliosId,
+            HasConfigId: hasConfigId,
+            HasDemoIdColumn: hasDemoId,
+            PasswordMaxLength: pwLen);
     }
 
     public async Task ExecuteInTransactionAsync(Func<FbConnection, FbTransaction, Task> action, CancellationToken ct = default)
@@ -35,9 +98,10 @@ public sealed class DatabaseSessionFactory
             await action(conn, tx).ConfigureAwait(false);
             await tx.CommitAsync(ct).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
             await tx.RollbackAsync(ct).ConfigureAwait(false);
+            AppLogger.Error("SQL", "Transacción revertida por error de base de datos.", ex);
             throw;
         }
     }
@@ -53,11 +117,41 @@ public sealed class DatabaseSessionFactory
             await tx.CommitAsync(ct).ConfigureAwait(false);
             return result;
         }
-        catch
+        catch (Exception ex)
         {
             await tx.RollbackAsync(ct).ConfigureAwait(false);
+            AppLogger.Error("SQL", "Transacción revertida por error de base de datos.", ex);
             throw;
         }
+    }
+
+    private static async Task<bool> TableExistsAsync(FbConnection conn, string table, CancellationToken ct)
+    {
+        await using var cmd = new FbCommand("SELECT COUNT(*) FROM RDB$RELATIONS WHERE TRIM(RDB$RELATION_NAME) = @T", conn);
+        AddParam(cmd, "@T", table);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture) > 0;
+    }
+
+    private static async Task<bool> ColumnExistsAsync(FbConnection conn, string table, string col, CancellationToken ct)
+    {
+        await using var cmd = new FbCommand("SELECT COUNT(*) FROM RDB$RELATION_FIELDS WHERE TRIM(RDB$RELATION_NAME) = @T AND TRIM(RDB$FIELD_NAME) = @C", conn);
+        AddParam(cmd, "@T", table);
+        AddParam(cmd, "@C", col);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture) > 0;
+    }
+
+    private static async Task<int> GetColumnLengthAsync(FbConnection conn, string table, string col, int fallback, CancellationToken ct)
+    {
+        await using var cmd = new FbCommand("""
+            SELECT FIRST 1 F.RDB$FIELD_LENGTH
+            FROM RDB$RELATION_FIELDS RF
+            JOIN RDB$FIELDS F ON F.RDB$FIELD_NAME = RF.RDB$FIELD_SOURCE
+            WHERE TRIM(RF.RDB$RELATION_NAME) = @T AND TRIM(RF.RDB$FIELD_NAME) = @C
+            """, conn);
+        AddParam(cmd, "@T", table);
+        AddParam(cmd, "@C", col);
+        object? val = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return val is null or DBNull ? fallback : Convert.ToInt32(val, CultureInfo.InvariantCulture);
     }
 
     public static void AddParam(FbCommand cmd, string name, object? value)

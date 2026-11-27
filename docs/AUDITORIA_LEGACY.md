@@ -1,8 +1,8 @@
 # Auditoría Técnica del Sistema Legacy (Base de Datos y Ejecutables)
 
 Este documento resume los hallazgos empíricos obtenidos al auditar:
-- **Base de datos**: `placillaPRUEBA\WMDBSPC.GDB` (7,918,592 bytes) y comparativa contra `Data\WMDBSPC.GDB` y `Data\db.sql`.
-- **Ejecutables**: `WeighMaster.exe` (3,545,600 bytes) y `WMGestion.exe` (3,355,136 bytes) compilados en Delphi 5 + BDE.
+- **Base de datos**: `placillaPRUEBA\WMDBSPC.GDB` (7,918,592 bytes) y prueba directa en red sobre servidor remoto `\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB` (resuelto a `192.168.2.56:/BDWM/placilla2/WMDBSPC.GDB`, Firebird 2.5.7 Dialecto 1).
+- **Ejecutables**: `WeighMaster.exe` (3,545,600 bytes) y `WMGestion.exe` (3,355,136 bytes) compilados en Delphi 5 + BDE (`E:\pesajefinal.CFG`).
 
 ---
 

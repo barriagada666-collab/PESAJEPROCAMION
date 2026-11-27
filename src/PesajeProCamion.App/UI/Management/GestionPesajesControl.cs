@@ -63,7 +63,7 @@ public sealed class GestionPesajesControl : UserControl
         ToolStripButton btnConsultar = AppTheme.CreateToolButton(AppIcon.Search, "Consultar", "Aplicar filtros de fecha/tipo/folio", AppTheme.NavyPrimary);
         ToolStripButton btnModificar = AppTheme.CreateToolButton(AppIcon.Settings, "Modificar Datos", "Editar datos del pesaje seleccionado", AppTheme.NavyDark);
         ToolStripButton btnAnular = AppTheme.CreateToolButton(AppIcon.Delete, "Anular / Reactivar", "Alternar estado anulado del folio seleccionado", AppTheme.AccentDanger);
-        ToolStripButton btnImprimir = AppTheme.CreateToolButton(AppIcon.Print, "Imprimir Ticket", "Previsualizar e imprimir ticket", AppTheme.NavyPrimary);
+        ToolStripButton btnImprimir = AppTheme.CreateToolButton(AppIcon.Print, "Ticket de Pesaje", "Elegir copias, previsualizar e imprimir ticket", AppTheme.NavyPrimary);
         ToolStripButton btnExcel = AppTheme.CreateToolButton(AppIcon.ExportExcel, "Exportar a Excel", "Exportar listado a Excel (.xlsx)", AppTheme.AccentEmerald);
         ToolStripButton btnDbf = AppTheme.CreateToolButton(AppIcon.ExportDbf, "Exportar a DBF", "Exportar tabla dBASE III (.dbf)", AppTheme.AccentAmber);
         ToolStripButton btnCsv = AppTheme.CreateToolButton(AppIcon.List, "Exportar a CSV", "Exportar a CSV UTF-8", AppTheme.TextPrimary);
@@ -131,6 +131,8 @@ public sealed class GestionPesajesControl : UserControl
     private void RenderGrid()
     {
         _grid.Rows.Clear();
+        long sumBruto = 0;
+        long sumTara = 0;
         long sumNeto = 0;
         int activos = 0;
         foreach (Pesaje p in _rows)
@@ -155,10 +157,12 @@ public sealed class GestionPesajesControl : UserControl
             else
             {
                 activos++;
+                sumBruto += p.Bruto;
+                sumTara += p.Tara;
                 sumNeto += p.Neto;
             }
         }
-        _lblResumen.Text = $"  Registros: {_rows.Count:N0} ({activos:N0} activos)   |   Total Neto Activo: {sumNeto:N0} kg ({sumNeto / 1000.0:N2} t)";
+        _lblResumen.Text = $"  Registros: {_rows.Count:N0} ({activos:N0} activos)   |   Total Bruto: {sumBruto:N0} kg   |   Total Tara: {sumTara:N0} kg   |   Total Neto: {sumNeto:N0} kg ({sumNeto / 1000.0:N2} t)";
     }
 
     private Pesaje? GetSelected() => _grid.CurrentRow?.Tag as Pesaje;
@@ -202,14 +206,24 @@ public sealed class GestionPesajesControl : UserControl
     private void PrintSelected()
     {
         Pesaje? p = GetSelected();
-        if (p is null) return;
+        if (p is null)
+        {
+            MessageBox.Show(this, "Seleccione un pesaje del listado para imprimir.", "Ticket de Pesaje", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
         if (!PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ImprimirTicket))
         {
             MessageBox.Show(this, "No está autorizado para imprimir tickets.", "Permisos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(p, _services.BasculaActual, _services.ConfigActual);
-        using var prev = new PrintPreviewDialog { Document = doc, Width = 780, Height = 580 };
+        using var copDlg = new Dialogs.TicketCopiesDialog(_services.ConfigActual.NroCopiasTicket);
+        if (copDlg.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+        using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(
+            p, _services.BasculaActual, _services.ConfigActual, copDlg.Copies, IconCatalog.GetCorporateLogo());
+        using var prev = new PrintPreviewDialog { Document = doc, Width = 840, Height = 640 };
         prev.ShowDialog(this);
     }
 

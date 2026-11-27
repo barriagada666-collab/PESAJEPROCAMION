@@ -71,4 +71,54 @@ public sealed class Ods9MigrationAndFirebirdTests
             if (File.Exists(fdbPath)) File.Delete(fdbPath);
         }
     }
+
+    [Fact]
+    public async Task RemoteNetworkUncDatabase_ResolvesAndQueriesSafelyInReadOnlyMode()
+    {
+        bool reachable = await RemoteDatabaseResolver.CheckTcpPortAsync("192.168.2.56", 3050, timeoutMs: 1200);
+        if (!reachable)
+        {
+            // Entorno aislado sin acceso LAN al servidor 192.168.2.56
+            return;
+        }
+
+        var rawSettings = new DatabaseSettings
+        {
+            DataSource = "localhost",
+            Port = 3050,
+            DatabasePath = @"\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB"
+        };
+
+        DatabaseProbeResult probe = await RemoteDatabaseResolver.ResolveAndProbeAsync(rawSettings, rawSettings.DatabasePath, autoDetectDialectAndCharset: true);
+        Assert.True(probe.Success, probe.ErrorMessage);
+        Assert.Equal("192.168.2.56", probe.ResolvedSettings.DataSource);
+        Assert.Equal("/bdwm/placilla2/WMDBSPC.GDB", probe.ResolvedSettings.DatabasePath, ignoreCase: true);
+        Assert.Equal(1, probe.ResolvedSettings.Dialect);
+        Assert.True(probe.IsLegacySchema);
+        Assert.True(probe.TotalPesajes >= 2700);
+
+        // Verificar lectura de repositorios sobre el esquema remoto ODS 9.1 / Dialect 1
+        var factory = new DatabaseSessionFactory(probe.ResolvedSettings);
+        var catalogs = new CatalogRepository(factory);
+        var security = new SecurityRepository(factory);
+        var weighing = new WeighingRepository(factory);
+
+        BasculaInfo basc = await catalogs.GetBasculaAsync(1);
+        Assert.False(string.IsNullOrWhiteSpace(basc.NombreEmpresa));
+        ConfiguracionSistema cfg = await catalogs.GetConfigAsync();
+        Assert.True(cfg.VisorLenData > 0);
+        FoliosSistema fol = await catalogs.GetFoliosAsync();
+        Assert.True(fol.FolioPesaje > 0);
+
+        List<Usuario> users = await security.GetUsuariosAsync(soloActivos: true);
+        Assert.NotEmpty(users);
+
+        List<Pesaje> recent = await weighing.QueryPesajesAsync(maxRows: 10);
+        Assert.Equal(10, recent.Count);
+        Assert.All(recent, p => Assert.True(p.FolioPesaje > 0));
+
+        // Verificar que la auditoría en BD remota sin DBAUDITLOG no lanza excepción
+        List<AuditLogEntry> remoteAudit = await security.GetAuditLogsAsync(DateTime.Today.AddDays(-7), DateTime.Today);
+        Assert.Empty(remoteAudit);
+    }
 }

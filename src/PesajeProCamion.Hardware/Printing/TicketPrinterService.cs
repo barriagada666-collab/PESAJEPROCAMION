@@ -81,13 +81,19 @@ public static partial class TicketPrinterService
         return sb.ToString();
     }
 
-    public static PrintDocument CreateCommercialTicketDocument(Pesaje p, BasculaInfo bascula, ConfiguracionSistema? cfg = null)
+    public static PrintDocument CreateCommercialTicketDocument(
+        Pesaje p,
+        BasculaInfo bascula,
+        ConfiguracionSistema? cfg = null,
+        short copies = 1,
+        Image? corporateLogo = null)
     {
         ArgumentNullException.ThrowIfNull(p);
         ArgumentNullException.ThrowIfNull(bascula);
 
         var doc = new PrintDocument { DocumentName = $"Ticket_Pesaje_{p.FolioPesaje}" };
-        doc.PrintPage += (_, e) => RenderTicketPage(e, p, bascula, cfg);
+        doc.PrinterSettings.Copies = Math.Clamp(copies, (short)1, (short)20);
+        doc.PrintPage += (_, e) => RenderTicketPage(e, p, bascula, cfg, corporateLogo);
         return doc;
     }
 
@@ -112,7 +118,7 @@ public static partial class TicketPrinterService
         return doc;
     }
 
-    private static void RenderTicketPage(PrintPageEventArgs e, Pesaje p, BasculaInfo bascula, ConfiguracionSistema? cfg)
+    private static void RenderTicketPage(PrintPageEventArgs e, Pesaje p, BasculaInfo bascula, ConfiguracionSistema? cfg, Image? corporateLogo)
     {
         Graphics? g = e.Graphics;
         if (g is null)
@@ -120,62 +126,108 @@ public static partial class TicketPrinterService
             return;
         }
 
-        using var fTitle = new Font("Segoe UI", 14, FontStyle.Bold);
-        using var fSub = new Font("Segoe UI", 10, FontStyle.Bold);
-        using var fBody = new Font("Segoe UI", 9.5f, FontStyle.Regular);
-        using var fBold = new Font("Segoe UI", 10.5f, FontStyle.Bold);
-        using var fBig = new Font("Segoe UI", 16, FontStyle.Bold);
-        using var pen = new Pen(Color.FromArgb(30, 58, 95), 1.5f);
+        using var fTitle = new Font("Segoe UI", 14.5f, FontStyle.Bold);
+        using var fComp = new Font("Segoe UI", 10.5f, FontStyle.Bold);
+        using var fSub = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+        using var fBody = new Font("Segoe UI", 9f, FontStyle.Regular);
+        using var fBold = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+        using var fBig = new Font("Segoe UI", 12.5f, FontStyle.Bold);
+        using var tealBrush = new SolidBrush(Color.FromArgb(6, 57, 83));
+        using var pen = new Pen(Color.FromArgb(8, 45, 69), 1.4f);
+        using var thinPen = new Pen(Color.FromArgb(148, 168, 178), 1f);
 
         float left = e.MarginBounds.Left;
         float width = e.MarginBounds.Width;
         float y = e.MarginBounds.Top;
 
+        if (corporateLogo is not null)
+        {
+            g.DrawImage(corporateLogo, new RectangleF(left + width - 110, y, 105, 56));
+        }
+
+        using var centerFmt = new StringFormat { Alignment = StringAlignment.Center };
+        string estado = p.Anulado ? " [ANULADO]" : string.Empty;
+        g.DrawString($"TICKET DE PESAJE COMERCIAL{estado}", fTitle, tealBrush, new RectangleF(left, y, width, 28), centerFmt);
+        y += 32;
+
         string company = string.IsNullOrWhiteSpace(bascula.NombreEmpresa) ? (cfg?.Titulo1 ?? "PESAJE DE CAMIONES") : bascula.NombreEmpresa;
-        g.DrawString(company, fTitle, Brushes.Black, left, y);
-        y += 26;
-        g.DrawString($"{bascula.Direccion}  |  RUT: {bascula.Rut}", fBody, Brushes.DimGray, left, y);
-        y += 22;
+        g.DrawString(company, fComp, Brushes.Black, left, y);
+        y += 18;
+        g.DrawString($"{bascula.Direccion}   {(string.IsNullOrWhiteSpace(bascula.Rut) ? string.Empty : "|  RUT: " + bascula.Rut)}", fBody, Brushes.DimGray, left, y);
+        y += 20;
         g.DrawLine(pen, left, y, left + width, y);
         y += 10;
 
-        string estado = p.Anulado ? " [ANULADO]" : string.Empty;
-        g.DrawString($"TICKET DE PESAJE COMERCIAL #{p.FolioPesaje:D6}{estado}", fSub, Brushes.Navy, left, y);
-        y += 26;
+        float boxTop = y;
+        float padX = 14;
+        y += 10;
 
-        (string Lbl, string Val)[] rows =
+        g.DrawString($"FOLIO PESAJE :  {p.FolioPesaje}", fBold, tealBrush, left + padX, y);
+        g.DrawString($"FECHA : {DateTime.Now:dd-MM-yyyy}", fBody, Brushes.Black, left + width * 0.65f, y);
+        y += 20;
+        g.DrawString($"TIPO PESAJE  :  {p.TipoPesaje}", fBody, Brushes.Black, left + padX, y);
+        g.DrawString($"HORA  : {DateTime.Now:HH:mm}", fBody, Brushes.Black, left + width * 0.65f, y);
+        y += 24;
+
+        (string Lbl, string Val)[] details =
         [
-            ("Tipo de Pesaje", p.TipoPesaje.ToString()),
-            ("Patente / Acoplado", $"{p.Patente}  {(string.IsNullOrWhiteSpace(p.Acoplado) ? string.Empty : "/ " + p.Acoplado)}"),
-            ("Cliente", p.NombreCliente),
-            ("Producto", p.NombreProducto),
-            ("Origen / Destino", $"{p.NombreOrigen} -> {p.NombreDestino}"),
-            ("Transportista / Chofer", $"{p.NombreTransportista} / {p.NombreChofer}"),
-            ("Guía Despacho", p.GuiaDespacho),
-            ("Ingreso", $"{p.FechaIngreso:dd/MM/yyyy} {p.HoraIngreso} ({p.NombreUsuarioIngreso})"),
-            ("Salida", $"{p.FechaSalida:dd/MM/yyyy} {p.HoraSalida} ({p.NombreUsuarioSalida})"),
-            ("Observaciones", $"{p.Observacion1} {p.Observacion2}".Trim())
+            ("PATENTE", string.IsNullOrWhiteSpace(p.Acoplado) ? p.Patente : $"{p.Patente}   ACOPLADO: {p.Acoplado}"),
+            ("CLIENTE", $"{p.Cliente} - {p.NombreCliente}".Trim(' ', '-')),
+            ("PRODUCTO", $"{p.Producto} - {p.NombreProducto}".Trim(' ', '-')),
+            ("CHOFER", $"{p.Chofer} {p.NombreChofer}".Trim()),
+            ("GUIA DESPACHO", p.GuiaDespacho),
+            ("ORIGEN / DEST.", $"{p.NombreOrigen} -> {p.NombreDestino}".Trim(' ', '-', '>'))
         ];
-
-        foreach ((string lbl, string val) in rows)
+        foreach ((string lbl, string val) in details)
         {
-            g.DrawString($"{lbl}:", fBold, Brushes.Black, left, y);
-            g.DrawString(val, fBody, Brushes.Black, left + 165, y);
-            y += 21;
+            g.DrawString(lbl, fBody, Brushes.DimGray, left + padX + 16, y);
+            g.DrawString(val, fBody, Brushes.Black, left + padX + 150, y);
+            y += 20;
         }
 
-        y += 10;
-        g.DrawRectangle(pen, left, y, width, 86);
-        float c1 = left + 20;
-        float c2 = left + width / 3f;
-        float c3 = left + (width * 2f) / 3f;
-        g.DrawString("PESO BRUTO", fSub, Brushes.DimGray, c1, y + 12);
-        g.DrawString($"{p.Bruto:N0} kg", fBig, Brushes.Black, c1, y + 36);
-        g.DrawString("PESO TARA", fSub, Brushes.DimGray, c2, y + 12);
-        g.DrawString($"{p.Tara:N0} kg", fBig, Brushes.Black, c2, y + 36);
-        g.DrawString("PESO NETO", fSub, Brushes.Navy, c3, y + 12);
-        g.DrawString($"{p.Neto:N0} kg", fBig, Brushes.Navy, c3, y + 36);
+        y += 8;
+        g.DrawLine(thinPen, left, y, left + width, y);
+        y += 14;
+
+        // Recuadro centrado BRUTO / TARA / NETO igual que boleto clásico moderno
+        float wBoxW = 280;
+        float wBoxX = left + (width - wBoxW) / 2f;
+        g.DrawRectangle(pen, wBoxX, y, wBoxW, 86);
+        DrawWeightLine(g, fBig, wBoxX + 16, y + 10, wBoxW - 32, "BRUTO", p.Bruto);
+        DrawWeightLine(g, fBig, wBoxX + 16, y + 34, wBoxW - 32, "TARA", p.Tara);
+        DrawWeightLine(g, fBig, wBoxX + 16, y + 58, wBoxW - 32, "NETO", p.Neto, tealBrush);
+        y += 100;
+
+        g.DrawLine(thinPen, left, y, left + width, y);
+        y += 12;
+
+        float colMid = left + width / 2f;
+        g.DrawString("ENTRADA", fSub, tealBrush, left + padX, y);
+        g.DrawString("SALIDA", fSub, tealBrush, colMid, y);
+        y += 20;
+        g.DrawString($"FECHA     :  {p.FechaIngreso:dd-MM-yyyy}", fBody, Brushes.Black, left + padX + 12, y);
+        g.DrawString($"FECHA     :  {p.FechaSalida:dd-MM-yyyy}", fBody, Brushes.Black, colMid + 12, y);
+        y += 18;
+        g.DrawString($"HORA      :  {p.HoraIngreso}", fBody, Brushes.Black, left + padX + 12, y);
+        g.DrawString($"HORA      :  {p.HoraSalida}", fBody, Brushes.Black, colMid + 12, y);
+        y += 18;
+        g.DrawString($"OPERADOR  :  {p.NombreUsuarioIngreso}", fBody, Brushes.Black, left + padX + 12, y);
+        g.DrawString($"OPERADOR  :  {p.NombreUsuarioSalida}", fBody, Brushes.Black, colMid + 12, y);
+        y += 26;
+
+        g.DrawString($"OBSERVACIONES :  {$"{p.Observacion1} {p.Observacion2}".Trim()}", fBody, Brushes.Black, left + padX, y);
+        y += 26;
+
+        g.DrawRectangle(pen, left, boxTop, width, y - boxTop);
         e.HasMorePages = false;
+    }
+
+    private static void DrawWeightLine(Graphics g, Font f, float x, float y, float w, string lbl, int valKg, Brush? brush = null)
+    {
+        using var rightFmt = new StringFormat { Alignment = StringAlignment.Far };
+        Brush b = brush ?? Brushes.Black;
+        g.DrawString(lbl, f, b, x, y);
+        g.DrawString($"{valKg:N0} kg", f, b, new RectangleF(x, y, w, 24), rightFmt);
     }
 
     public static bool SendRawTextToPrinter(string printerName, string content, string documentName = "TicketPesaje")

@@ -30,6 +30,7 @@ public static class FirebirdSchemaManager
         await EnsureTablesAsync(conn, ct).ConfigureAwait(false);
         await EnsureIndexesAsync(conn, ct).ConfigureAwait(false);
         await EnsureSeedDefaultsAsync(conn, ct).ConfigureAwait(false);
+        Infrastructure.DatabaseSessionFactory.InvalidateCapabilitiesCache();
     }
 
     private static async Task<bool> CanOpenAsync(string connStr, CancellationToken ct)
@@ -301,7 +302,7 @@ public static class FirebirdSchemaManager
                     CLIENTE VARCHAR(10),
                     ORIGEN VARCHAR(10),
                     DESTINO VARCHAR(10),
-                    GDESPACHO VARCHAR(12),
+                    GDESPACHO VARCHAR(50),
                     NETOINF INTEGER DEFAULT 0,
                     FECHAING DATE NOT NULL,
                     HORAING VARCHAR(5),
@@ -327,7 +328,7 @@ public static class FirebirdSchemaManager
                     PRODUCTO VARCHAR(12),
                     CLIENTE VARCHAR(10),
                     DESTINO VARCHAR(10),
-                    GDESPACHO VARCHAR(12),
+                    GDESPACHO VARCHAR(50),
                     NETOINF INTEGER DEFAULT 0,
                     FECHAING DATE,
                     HORAING VARCHAR(5),
@@ -356,7 +357,7 @@ public static class FirebirdSchemaManager
                     CLIENTE VARCHAR(10),
                     ORIGEN VARCHAR(10),
                     DESTINO VARCHAR(10),
-                    GDESPACHO VARCHAR(12),
+                    GDESPACHO VARCHAR(50),
                     NETOINF INTEGER DEFAULT 0,
                     FECHAING DATE NOT NULL,
                     HORAING VARCHAR(5),

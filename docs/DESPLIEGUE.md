@@ -1,32 +1,31 @@
-# Guía de Despliegue y Migración — PesajeProCamion
+# Guía de Despliegue, Conexión Remota y Portabilidad
 
-## 1. Requisitos en Equipo Destino
-- Windows 10 / Windows 11 (64 bits).
-- Servicio **Firebird 2.5+** instalado localmente o accesible en red TCP puerto `3050`.
-- Si instala mediante el paquete `PesajeProCamion_Setup_v2.0.0.exe`, no requiere instalar .NET Runtime previamente (distribución autocontenida).
+## 1. Requisitos en Equipo Cliente (Cero Dependencias)
+- **Windows 10 / 11 (64 bits)**.
+- **Cero dependencias de .NET**: tanto el instalador como la versión Portable son compilaciones **autocontenidas (.NET 10 self-contained)**.
+- Acceso TCP al puerto `3050` del servidor **Firebird / InterBase** (local `localhost` o equipo en red LAN como `192.168.2.56`).
 
-## 2. Instalación y Actualización
-- **Instalación gráfica**: Ejecute `PesajeProCamion_Setup_v2.0.0.exe` y siga el asistente.
-- **Instalación silenciosa**:
+## 2. Despliegue por Instalador o Modo Portable
+- **Instalador Windows (`PesajeProCamion_Setup_v2.0.0.exe`)**:
   ```powershell
   PesajeProCamion_Setup_v2.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
   ```
-- **Actualización**: Ejecute el nuevo instalador sobre la versión anterior (`AppId` compartido). La base de datos y configuración en `%ProgramData%\PesajeProCamion` se conservan intactas.
-- **Desinstalación**: Desde *Agregar o quitar programas* o ejecutando `unins000.exe /VERYSILENT` dentro de la carpeta de instalación.
+- **Versión Portable (`PesajeProCamion_Portable_v2.0.0_win-x64.zip`)**: descomprimir y ejecutar `PesajeProCamion.App.exe` directamente desde USB o carpeta de red local. Si incluye `portable.flag` o `appsettings.json` junto al ejecutable, toda configuración y logs permanecen portables sin escribir en `Program Files`.
 
-## 3. Migración desde Base Legacy ODS 9.1 (`.GDB`)
-### Opción A — Línea de Comandos
-```powershell
-PesajeProCamion.App.exe --migrate "C:\ruta\WMDBSPC.GDB" "C:\ProgramData\PesajeProCamion\Data\WMDBSPC.FDB"
-```
+## 3. Conexión a Base de Datos Remota (Incluyendo Rutas UNC de Red)
+En el modal **Servidor BD** (disponible en el Login y en la barra superior principal):
+1. Puede pegar directamente una ruta compartida UNC de Windows, por ejemplo:
+   ```text
+   \\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB
+   ```
+   y presionar **Analizar Ruta Red** / **Probar Conexión**.
+2. El motor de resolución extrae automáticamente el host (`192.168.2.56`), evalúa los candidatos de ruta del servidor (`/bdwm/placilla2/WMDBSPC.GDB`, `C:\bdwm\...`, etc.), detecta **Dialecto (1 legacy o 3 moderno)**, **Charset (`WIN1252` / `UTF8` / `NONE`)**, latencia, empresa y cantidad de registros.
+3. Use **Aplicar (Sin Cerrar)** para activar la conexión al instante o **Guardar y Conectar** para persistirla en `appsettings.json`.
+4. También puede validarse desde línea de comandos sin interfaz:
+   ```powershell
+   PesajeProCamion.App.exe --probe "\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB"
+   ```
 
-### Opción B — Asistente Visual
-1. Inicie **PesajeProCamion.App.exe** y presione **Base de Datos**.
-2. Indique el archivo `.GDB` legacy de origen y la ruta destino `.FDB`.
-3. Presione **Migrar GDB Legacy -> FDB** y revise el reporte de saneamiento antes de guardar.
-
-## 4. Modo Simulación (`/TEST`)
-Para validar pantallas, tickets y pesaje sin báscula física conectada:
-```powershell
-PesajeProCamion.App.exe /TEST
-```
+## 4. Visor RS-232 de Báscula y Diagnóstico
+- Desde **Visor / COM** en la barra operativa principal o **Configuración -> Visor Serial / Báscula**: configure `COM1..COM16`, velocidad, paridad, `STX` (`0` para tramas por línea CR/LF), inyecte tramas ASCII con **Probar Trama STX**, o inicie en modo simulación con `/TEST`.
+- Desde **Logs de Errores** en barra superior o Login: inspeccione en vivo excepciones UI/SQL, errores COM y trazas diarias almacenadas en `Logs\pesaje_yyyyMMdd.log`.

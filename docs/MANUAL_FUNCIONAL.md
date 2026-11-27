@@ -1,25 +1,23 @@
 # Manual Funcional — PesajeProCamion v2.0
 
-## 1. Inicio de Sesión y Conexión
-1. Al iniciar **PesajeProCamion**, seleccione su usuario e ingrese su contraseña (las contraseñas migradas conservan su valor inicial y se actualizan automáticamente a hash `PBKDF2-SHA256` al primer ingreso).
-2. Seleccione el módulo deseado (**Pesaje Camiones**, **Gestión e Informes** o **Suite Completa**).
-3. Si necesita apuntar a otro servidor Firebird o importar una base legacy `.GDB`, presione **Base de Datos** antes de iniciar sesión.
+## 1. Arranque, Inicio de Sesión y Servidor de BD Remota
+1. Al iniciar **PesajeProCamion**, se muestra la pantalla corporativa de carga y luego el **Inicio de Sesión**.
+2. Presione **Servidor BD** (en Login) o **Configurar Servidor BD...** (en la barra superior) para conectarse a un servidor local o remoto:
+   - Puede ingresar directamente una ruta compartida de red UNC como `\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`.
+   - Use **Probar Conexión** para verificar TCP puerto `3050`, ruta en el servidor, latencia y conteo de pesajes.
+   - Use **Aplicar (Sin Cerrar)** para aplicar en vivo o **Guardar y Conectar** para guardar en `appsettings.json`.
+3. Ante cualquier incidencia técnica, abra **Logs de Errores** en el Login, en la barra superior o en *Acerca de* para revisar o exportar la traza detallada.
 
-## 2. Pesaje Comercial (Dos Pasadas o Tara Registrada)
-1. En la pestaña **Pesaje de Camiones**, ingrese la **Patente** y presione `Tab` (o use el botón de búsqueda).
-   - Si el camión tiene un **Primer Pesaje pendiente** en `DBTRANSITO`, el sistema carga automáticamente sus datos en modo *Segundo Pesaje*.
-   - Si es nuevo ingreso, puede seleccionar **Cliente**, **Producto**, **Origen**, **Destino**, **Transportista**, **Chofer** y **Tipo de Pesaje** (*Recepción*, *Despacho*, *Movimiento Interno*).
-2. Presione **Capturar Peso** para leer el valor estable del indicador RS-232 (o **Ingreso Manual** en modo contingencia/prueba).
-3. Si el camión tiene **Tara Registrada vigente**, presione **Aplicar Tara Reg.** para completar el pesaje en una sola pasada (validando vencimiento en días `NDIAS` y `TARAREG`).
-4. Presione **Guardar Pesaje** para registrar ingreso en tránsito o finalizar la salida con ticket comercial.
+## 2. Visor de Báscula RS-232 y Modo Simulación
+1. En **Pesaje de Camiones -> Visor / COM** (o *Configuración -> Visor Serial / Báscula*), seleccione el puerto (`COM1..COM16`), velocidad, paridad y trama (`STX > 0` con posición/largo, o `STX = 0` por salto de línea `CR/LF`).
+2. Use **Probar Trama STX** para validar parsing ASCII o **Simular** para pruebas sin balanza física conectada (también mediante `/TEST`).
 
-## 3. Pesaje por Ejes Normativa M.O.P. (Estático y Dinámico)
-1. Desde **Operación -> Pesaje por Ejes M.O.P.** (o desde el botón **Pesaje Ejes MOP**), verifique **Tipo MOP** (ej. `510`) y **Largo (m)**.
-2. Elija modo **Estático** (captura manual eje por eje) o **Dinámico** (detección automática por umbrales `VMOPUNDER`/`VMOPOVER` y recorte porcentual `VMOPCUTLEFT`/`VMOPCUTRIGHT`).
-3. Presione **Iniciar Pesaje** (o **Reproducir Demo** para probar la curva `DEMO1`), capture todos los ejes y revise el semáforo **DENTRO DE NORMA** / **FUERA DE NORMA** según Decreto MOP 158/80 y Ley 19.171/92.
-4. Presione **Terminar e Imprimir** para guardar el folio MOP y visualizar el *Boleto Oficial para Control Caminero M.O.P.*.
+## 3. Pesaje Comercial (Pesar Camión / Pesar Carro / Tara Registrada)
+1. Ingrese **Patente** y presione `Tab` (autocompleta datos de tránsito o última tara del camión).
+2. Digite o busque con lupa **Cliente**, **Producto**, **Origen**, **Destino**, **Transportista** y **Chofer** (todos autoresuelven nombre al salir del campo).
+3. Capture pesos con **PESAR CAMIÓN**, **PESAR CARRO / 2° PESO** o **APLICAR TARA REGISTRADA**, y presione **GRABAR PESAJE**.
 
-## 4. Administración de Pesajes, Informes y Catálogos
-- **Administración de Pesajes**: filtre por fechas, tipo de operación, patente o folio exacto. Permite **Modificar Datos**, **Anular / Reactivar**, **Imprimir Ticket** y exportar a **Excel (.xlsx)**, **DBF (.dbf)** o **CSV (.csv)**.
-- **Informes y Auditoría**: 10 reportes integrados (por Cliente, Patente, Producto, Transportista, Taras de Camiones, Tonelaje por Turno, Tránsito Eliminados, Pesajes MOP, Logs de Ingreso y Auditoría Histórica) exportables en un clic.
-- **Catálogos**: alta, edición, búsqueda y eliminación de Camiones, Clientes (validación RUT Módulo 11), Productos, Transportistas, Choferes, Orígenes y Destinos.
+## 4. Pesaje por Ejes M.O.P. y Administración
+- En **Pesaje Ejes MOP**: seleccione modo **Estático** o **Dinámico**, ejecute **Reproducir Demo** (`DEMO1`) y obtenga evaluación automática Decreto 158/80 y Ley 19.171/92.
+- En **Administración de Pesajes**: filtre por fechas/tipo/folio, revise totales inferiores (**Bruto**, **Tara**, **Neto**), elija **Nro de Copias** al emitir **Ticket de Pesaje** o exporte a `.xlsx`, `.dbf` o `.csv`.
+- En **Informes y Auditoría**: 11 informes integrados incluyendo *Tonelaje por Turno*, *Tránsito Eliminados*, *Pesajes MOP*, *Auditoría* y *Logs de Errores*.

@@ -25,51 +25,70 @@ public sealed class SerialFrameParser
             _buffer.RemoveRange(0, _buffer.Count - 512);
         }
 
-        byte stx = (byte)Math.Clamp(cfg.VisorStx, 0, 255);
-        int stxIdx = _buffer.IndexOf(stx);
-        if (stxIdx < 0)
-        {
-            return null;
-        }
-
-        if (stxIdx > 0)
-        {
-            _buffer.RemoveRange(0, stxIdx);
-        }
-
-        int posOffset = Math.Max(1, cfg.VisorPosData); // 1-based tras STX o desde inicio de trama
+        int posOffset = Math.Max(1, cfg.VisorPosData); // 1-based tras STX o desde inicio de línea
         int dataLen = Math.Max(1, cfg.VisorLenData);
         int frameMinLen = posOffset + dataLen;
-
-        // Buscar fin de línea CR/LF si existe después del STX o consumir ventana fija
-        int crIdx = _buffer.FindIndex(1, b => b is (byte)'\r' or (byte)'\n');
         int consumeLen;
-        if (crIdx > 0 && crIdx >= frameMinLen - 1)
+
+        if (cfg.VisorStx > 0)
         {
-            consumeLen = crIdx + 1;
-        }
-        else if (_buffer.Count >= frameMinLen + 1)
-        {
-            int nextStx = _buffer.FindIndex(1, b => b == stx);
-            consumeLen = nextStx > 0 ? nextStx : frameMinLen + 1;
+            byte stx = (byte)Math.Clamp(cfg.VisorStx, 1, 255);
+            int stxIdx = _buffer.IndexOf(stx);
+            if (stxIdx < 0)
+            {
+                return null;
+            }
+            if (stxIdx > 0)
+            {
+                _buffer.RemoveRange(0, stxIdx);
+            }
+
+            int crIdx = _buffer.FindIndex(1, b => b is (byte)'\r' or (byte)'\n');
+            if (crIdx > 0 && crIdx >= frameMinLen - 1)
+            {
+                consumeLen = crIdx + 1;
+            }
+            else if (_buffer.Count >= frameMinLen + 1)
+            {
+                int nextStx = _buffer.FindIndex(1, b => b == stx);
+                consumeLen = nextStx > 0 ? nextStx : frameMinLen + 1;
+            }
+            else
+            {
+                return null;
+            }
         }
         else
         {
-            return null;
+            // Indicador ASCII estándar delimitado por salto de línea CR/LF sin byte STX
+            int crIdx = _buffer.FindIndex(b => b is (byte)'\r' or (byte)'\n');
+            if (crIdx <= 0)
+            {
+                return null;
+            }
+            consumeLen = crIdx + 1;
         }
 
         byte[] frameBytes = [.. _buffer.Take(consumeLen)];
         _buffer.RemoveRange(0, consumeLen);
 
         string ascii = Encoding.ASCII.GetString(frameBytes);
-        int startIdx = Math.Clamp(posOffset - 1, 0, Math.Max(0, ascii.Length - 1));
-        int takeLen = Math.Min(dataLen, ascii.Length - startIdx);
-        if (takeLen <= 0)
+        string slice;
+        if (cfg.VisorStx > 0)
         {
-            return new ParsedWeightFrame(false, 0, ascii, "Trama incompleta");
+            int startIdx = Math.Clamp(posOffset - 1, 0, Math.Max(0, ascii.Length - 1));
+            int takeLen = Math.Min(dataLen, ascii.Length - startIdx);
+            if (takeLen <= 0)
+            {
+                return new ParsedWeightFrame(false, 0, ascii, "Trama incompleta");
+            }
+            slice = ascii.Substring(startIdx, takeLen).Trim();
+        }
+        else
+        {
+            slice = ascii.Trim();
         }
 
-        string slice = ascii.Substring(startIdx, takeLen).Trim();
         string numericChars = new(slice.Where(c => char.IsAsciiDigit(c) || c == '-' || c == '.').ToArray());
         if (double.TryParse(numericChars, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed))
         {

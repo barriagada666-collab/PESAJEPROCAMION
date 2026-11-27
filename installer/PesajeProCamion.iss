@@ -17,8 +17,8 @@ AppName=PesajeProCamion
 AppVersion={#AppVersion}
 AppVerName=PesajeProCamion {#AppVersion}
 AppPublisher=PesajeProCamion
-AppPublisherURL=https://github.com/
-AppSupportURL=https://github.com/
+AppPublisherURL=https://github.com/barriagada666-collab/PESAJEPROCAMION
+AppSupportURL=https://github.com/barriagada666-collab/PESAJEPROCAMION
 DefaultDirName={autopf}\PesajeProCamion
 DefaultGroupName=PesajeProCamion
 AllowNoIcons=yes
@@ -43,6 +43,7 @@ VersionInfoCompany=PesajeProCamion
 VersionInfoDescription=Instalador del Sistema de Pesaje de Camiones
 VersionInfoProductName=PesajeProCamion
 VersionInfoProductVersion=2.0.0.0
+InfoBeforeFile=..\CHANGELOG.md
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"

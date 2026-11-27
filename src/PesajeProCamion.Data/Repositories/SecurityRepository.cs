@@ -1,12 +1,14 @@
+using System.Globalization;
 using FirebirdSql.Data.FirebirdClient;
 using PesajeProCamion.Data.Infrastructure;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 using PesajeProCamion.Domain.Security;
 using static PesajeProCamion.Data.Infrastructure.DatabaseSessionFactory;
 
 namespace PesajeProCamion.Data.Repositories;
 
-/// <summary>Gestión de usuarios, autenticación PBKDF2 con rehash transparente y registros de acceso/auditoría.</summary>
+/// <summary>Gestión de usuarios, autenticación PBKDF2 (compatible con BD remota legacy), y registros de acceso/auditoría.</summary>
 public sealed class SecurityRepository
 {
     private readonly DatabaseSessionFactory _db;
@@ -35,6 +37,7 @@ public sealed class SecurityRepository
 
     public async Task<Usuario?> AuthenticateAsync(short usuarioId, string password, int sistemaId, CancellationToken ct = default)
     {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var cmd = new FbCommand("SELECT * FROM DBUSUARIOS WHERE USUARIO = @ID", conn);
         AddParam(cmd, "@ID", usuarioId);
@@ -47,10 +50,11 @@ public sealed class SecurityRepository
         Usuario user = MapUsuario(r);
         if (!user.Activo || !PasswordHasher.VerifyPassword(password, user.PasswordHash, out bool needsRehash))
         {
+            AppLogger.Warn("Security", $"Intento de autenticación fallido para usuario #{usuarioId} ({user.Nombre}).");
             return null;
         }
 
-        if (needsRehash)
+        if (needsRehash && caps.PasswordMaxLength >= 80)
         {
             string upgradedHash = PasswordHasher.HashPassword(password);
             user.PasswordHash = upgradedHash;
@@ -62,47 +66,88 @@ public sealed class SecurityRepository
                 await upCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }, ct).ConfigureAwait(false);
         }
+        else if (needsRehash)
+        {
+            AppLogger.Info("Security", $"Base remota con PASS_WORD de largo {caps.PasswordMaxLength}: se omite actualización a hash largo PBKDF2.");
+        }
 
         await RegistrarLogIngresoAsync(user.Id, sistemaId, accionId: 1, turno: 0, ct).ConfigureAwait(false);
+        AppLogger.Info("Security", $"Inicio de sesión: {user.Nombre} (ID={user.Id}, Sistema={sistemaId}).");
         return user;
     }
 
     public async Task ChangePasswordAsync(short usuarioId, string newPlainPassword, short modificadoPor, CancellationToken ct = default)
     {
-        string hash = PasswordHasher.HashPassword(newPlainPassword);
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        string toStore = caps.PasswordMaxLength >= 80
+            ? PasswordHasher.HashPassword(newPlainPassword)
+            : newPlainPassword.Trim().ToUpperInvariant();
+        if (toStore.Length > caps.PasswordMaxLength)
+        {
+            toStore = toStore[..caps.PasswordMaxLength];
+        }
+
         await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
             await using var cmd = new FbCommand("UPDATE DBUSUARIOS SET PASS_WORD = @PW, USUAMOD = @UM WHERE USUARIO = @U", conn, tx);
-            AddParam(cmd, "@PW", hash);
+            AddParam(cmd, "@PW", toStore);
             AddParam(cmd, "@UM", modificadoPor);
             AddParam(cmd, "@U", usuarioId);
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-            await InsertAuditInternalAsync(conn, tx, modificadoPor, "SEGURIDAD", "DBUSUARIOS", usuarioId.ToString(System.Globalization.CultureInfo.InvariantCulture), "CAMBIO_CLAVE", "Actualización de contraseña", ct).ConfigureAwait(false);
+            await InsertAuditInternalAsync(conn, tx, caps, modificadoPor, "SEGURIDAD", "DBUSUARIOS", usuarioId.ToString(CultureInfo.InvariantCulture), "CAMBIO_CLAVE", "Actualización de contraseña", ct).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
     }
 
     public async Task<short> SaveUsuarioAsync(Usuario u, string? newPlainPassword, short actorId, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(u);
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         return await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
             bool esNuevo = u.Id <= 0;
             if (esNuevo)
             {
                 await using var nextCmd = new FbCommand("SELECT COALESCE(MAX(USUARIO), 0) + 1 FROM DBUSUARIOS", conn, tx);
-                short maxId = Convert.ToInt16(await nextCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), System.Globalization.CultureInfo.InvariantCulture);
-                await using var genCmd = new FbCommand("SELECT NEXT VALUE FOR GEN_FLUSUARIO FROM RDB$DATABASE", conn, tx);
-                short genId = Convert.ToInt16(await genCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), System.Globalization.CultureInfo.InvariantCulture);
+                short maxId = Convert.ToInt16(await nextCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+                short genId = maxId;
+                if (caps.HasGenUsuario)
+                {
+                    await using var genCmd = new FbCommand("SELECT NEXT VALUE FOR GEN_FLUSUARIO FROM RDB$DATABASE", conn, tx);
+                    genId = Convert.ToInt16(await genCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+                }
                 u.Id = Math.Max(maxId, genId);
-                await using var folCmd = new FbCommand("UPDATE DBFOLIOS SET FLUSUARIO = @FU WHERE ID = 1", conn, tx);
+
+                string folSql = caps.HasFoliosId
+                    ? "UPDATE DBFOLIOS SET FLUSUARIO = @FU WHERE ID = 1"
+                    : "UPDATE DBFOLIOS SET FLUSUARIO = @FU";
+                await using var folCmd = new FbCommand(folSql, conn, tx);
                 AddParam(folCmd, "@FU", u.Id + 1);
                 await folCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
-            string passwordToStore = !string.IsNullOrWhiteSpace(newPlainPassword)
-                ? PasswordHasher.HashPassword(newPlainPassword)
-                : (!string.IsNullOrWhiteSpace(u.PasswordHash) ? u.PasswordHash : PasswordHasher.HashPassword("12345"));
+            string passwordToStore;
+            if (!string.IsNullOrWhiteSpace(newPlainPassword))
+            {
+                passwordToStore = caps.PasswordMaxLength >= 80
+                    ? PasswordHasher.HashPassword(newPlainPassword)
+                    : newPlainPassword.Trim().ToUpperInvariant();
+            }
+            else if (!string.IsNullOrWhiteSpace(u.PasswordHash))
+            {
+                passwordToStore = u.PasswordHash;
+            }
+            else
+            {
+                passwordToStore = caps.PasswordMaxLength >= 80
+                    ? PasswordHasher.HashPassword("12345")
+                    : "12345";
+            }
+
+            if (passwordToStore.Length > caps.PasswordMaxLength)
+            {
+                passwordToStore = passwordToStore[..caps.PasswordMaxLength];
+            }
 
             u.PasswordHash = passwordToStore;
 
@@ -133,35 +178,50 @@ public sealed class SecurityRepository
             AddParam(cmd, "@UM", actorId);
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-            await InsertAuditInternalAsync(conn, tx, actorId, "SEGURIDAD", "DBUSUARIOS", u.Nombre, esNuevo ? "CREAR" : "MODIFICAR", $"Perfil={(short)u.Perfil}, Activo={u.Activo}", ct).ConfigureAwait(false);
+            await InsertAuditInternalAsync(conn, tx, caps, actorId, "SEGURIDAD", "DBUSUARIOS", u.Nombre, esNuevo ? "CREAR" : "MODIFICAR", $"Perfil={(short)u.Perfil}, Activo={u.Activo}", ct).ConfigureAwait(false);
             return u.Id;
         }, ct).ConfigureAwait(false);
     }
 
     public async Task DeleteUsuarioAsync(short usuarioId, short actorId, CancellationToken ct = default)
     {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
             await using var cmd = new FbCommand("DELETE FROM DBUSUARIOS WHERE USUARIO = @U", conn, tx);
             AddParam(cmd, "@U", usuarioId);
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            await InsertAuditInternalAsync(conn, tx, actorId, "SEGURIDAD", "DBUSUARIOS", usuarioId.ToString(System.Globalization.CultureInfo.InvariantCulture), "ELIMINAR", "Usuario eliminado", ct).ConfigureAwait(false);
+            await InsertAuditInternalAsync(conn, tx, caps, actorId, "SEGURIDAD", "DBUSUARIOS", usuarioId.ToString(CultureInfo.InvariantCulture), "ELIMINAR", "Usuario eliminado", ct).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
     }
 
     public async Task RegistrarLogIngresoAsync(int usuarioId, int sistemaId, int accionId, int turno = 0, CancellationToken ct = default)
     {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         DateTime now = DateTime.Now;
         await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
+            int nextLogId;
+            if (caps.HasGenLogIngreso)
+            {
+                await using var gen = new FbCommand("SELECT NEXT VALUE FOR GEN_LOGINGRESO FROM RDB$DATABASE", conn, tx);
+                nextLogId = Convert.ToInt32(await gen.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                await using var maxCmd = new FbCommand("SELECT COALESCE(MAX(ID_LOG), 0) + 1 FROM DBLOGSINGRESO", conn, tx);
+                nextLogId = Convert.ToInt32(await maxCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+            }
+
             await using var cmd = new FbCommand("""
                 INSERT INTO DBLOGSINGRESO (ID_LOG, USUARIO, SISTEMA, FECHA, HORA, TURNO, ACCION)
-                VALUES (NEXT VALUE FOR GEN_LOGINGRESO, @U, @S, @F, @H, @T, @A)
+                VALUES (@ID, @U, @S, @F, @H, @T, @A)
                 """, conn, tx);
+            AddParam(cmd, "@ID", nextLogId);
             AddParam(cmd, "@U", usuarioId);
             AddParam(cmd, "@S", sistemaId);
             AddParam(cmd, "@F", now.Date);
-            AddParam(cmd, "@H", now.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture));
+            AddParam(cmd, "@H", now.ToString("HH:mm", CultureInfo.InvariantCulture));
             AddParam(cmd, "@T", turno);
             AddParam(cmd, "@A", accionId);
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -217,6 +277,12 @@ public sealed class SecurityRepository
 
     public async Task<List<AuditLogEntry>> GetAuditLogsAsync(DateTime desde, DateTime hasta, CancellationToken ct = default)
     {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        if (!caps.HasAuditLog)
+        {
+            return [];
+        }
+
         var list = new List<AuditLogEntry>();
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var cmd = new FbCommand("""
@@ -252,6 +318,7 @@ public sealed class SecurityRepository
     public static async Task InsertAuditInternalAsync(
         FbConnection conn,
         FbTransaction tx,
+        DatabaseCapabilities caps,
         short usuarioId,
         string modulo,
         string entidad,
@@ -260,13 +327,19 @@ public sealed class SecurityRepository
         string detalle,
         CancellationToken ct)
     {
+        AppLogger.Info("AUDIT", $"[{modulo}/{entidad}] {accion} ({clave}) usr={usuarioId}: {detalle}");
+        if (!caps.HasAuditLog)
+        {
+            return;
+        }
+
         DateTime now = DateTime.Now;
         await using var cmd = new FbCommand("""
             INSERT INTO DBAUDITLOG (ID_AUDIT, FECHA, HORA, USUARIO, MODULO, ENTIDAD, CLAVE, ACCION, DETALLE)
             VALUES (NEXT VALUE FOR GEN_AUDITLOG, @F, @H, @U, @M, @E, @C, @A, @D)
             """, conn, tx);
         AddParam(cmd, "@F", now.Date);
-        AddParam(cmd, "@H", now.ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture));
+        AddParam(cmd, "@H", now.ToString("HH:mm:ss", CultureInfo.InvariantCulture));
         AddParam(cmd, "@U", usuarioId);
         AddParam(cmd, "@M", modulo.Length > 25 ? modulo[..25] : modulo);
         AddParam(cmd, "@E", entidad.Length > 30 ? entidad[..30] : entidad);

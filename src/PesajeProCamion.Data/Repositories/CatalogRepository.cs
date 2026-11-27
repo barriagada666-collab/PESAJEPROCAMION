@@ -69,7 +69,7 @@ public sealed class CatalogRepository
     public async Task<ConfiguracionSistema> GetConfigAsync(CancellationToken ct = default)
     {
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = new FbCommand("SELECT FIRST 1 * FROM DBCONFIG ORDER BY ID", conn);
+        await using var cmd = new FbCommand("SELECT FIRST 1 * FROM DBCONFIG", conn);
         await using FbDataReader r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         var cfg = new ConfiguracionSistema();
         if (!await r.ReadAsync(ct).ConfigureAwait(false))
@@ -120,23 +120,36 @@ public sealed class CatalogRepository
     public async Task SaveConfigAsync(ConfiguracionSistema cfg, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(cfg);
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
-            await using var cmd = new FbCommand("""
-                UPDATE OR INSERT INTO DBCONFIG (
-                    ID, FECHAINST, NPORCTARA, NROCOPTCK, BASCENCERO, CEROBASC, DINACTIVO, CONFIMPTICKET,
-                    SISTOP, PRINTINDEX, PRINTINDEX2, VMOPUNDER, VMOPOVER, VMOPCUTLEFT, VMOPCUTRIGHT,
-                    VISOR_STX, VISOR_POSDATA, VISOR_LENDATA, VNRO_FILTROS, DSTDUPFACTOR, DSTDDOWNFACTOR,
-                    OFFSET1, OFFSET2, OFFSET3, OFFSET4, OFFSET5, OFFSET6, OFFSET7,
-                    CALIB1, CALIB2, CALIB3, CALIB4, CALIB5, CALIB6, CALIB7)
-                VALUES (
-                    1, @FI, @NPT, @NRC, @BEC, @CB, @DA, @CIT,
-                    @SO, @P1, @P2, @VU, @VO, @VCL, @VCR,
-                    @VSTX, @VPOS, @VLEN, @VNF, @DUF, @DDF,
-                    @O1, @O2, @O3, @O4, @O5, @O6, @O7,
-                    @C1, @C2, @C3, @C4, @C5, @C6, @C7)
-                MATCHING (ID)
-                """, conn, tx);
+            string sql = caps.HasConfigId
+                ? """
+                  UPDATE OR INSERT INTO DBCONFIG (
+                      ID, FECHAINST, NPORCTARA, NROCOPTCK, BASCENCERO, CEROBASC, DINACTIVO, CONFIMPTICKET,
+                      SISTOP, PRINTINDEX, PRINTINDEX2, VMOPUNDER, VMOPOVER, VMOPCUTLEFT, VMOPCUTRIGHT,
+                      VISOR_STX, VISOR_POSDATA, VISOR_LENDATA, VNRO_FILTROS, DSTDUPFACTOR, DSTDDOWNFACTOR,
+                      OFFSET1, OFFSET2, OFFSET3, OFFSET4, OFFSET5, OFFSET6, OFFSET7,
+                      CALIB1, CALIB2, CALIB3, CALIB4, CALIB5, CALIB6, CALIB7)
+                  VALUES (
+                      1, @FI, @NPT, @NRC, @BEC, @CB, @DA, @CIT,
+                      @SO, @P1, @P2, @VU, @VO, @VCL, @VCR,
+                      @VSTX, @VPOS, @VLEN, @VNF, @DUF, @DDF,
+                      @O1, @O2, @O3, @O4, @O5, @O6, @O7,
+                      @C1, @C2, @C3, @C4, @C5, @C6, @C7)
+                  MATCHING (ID)
+                  """
+                : """
+                  UPDATE DBCONFIG SET
+                      FECHAINST = @FI, NPORCTARA = @NPT, NROCOPTCK = @NRC, BASCENCERO = @BEC, CEROBASC = @CB,
+                      DINACTIVO = @DA, CONFIMPTICKET = @CIT, SISTOP = @SO, PRINTINDEX = @P1, PRINTINDEX2 = @P2,
+                      VMOPUNDER = @VU, VMOPOVER = @VO, VMOPCUTLEFT = @VCL, VMOPCUTRIGHT = @VCR,
+                      VISOR_STX = @VSTX, VISOR_POSDATA = @VPOS, VISOR_LENDATA = @VLEN, VNRO_FILTROS = @VNF,
+                      DSTDUPFACTOR = @DUF, DSTDDOWNFACTOR = @DDF,
+                      OFFSET1 = @O1, OFFSET2 = @O2, OFFSET3 = @O3, OFFSET4 = @O4, OFFSET5 = @O5, OFFSET6 = @O6, OFFSET7 = @O7,
+                      CALIB1 = @C1, CALIB2 = @C2, CALIB3 = @C3, CALIB4 = @C4, CALIB5 = @C5, CALIB6 = @C6, CALIB7 = @C7
+                  """;
+            await using var cmd = new FbCommand(sql, conn, tx);
             AddParam(cmd, "@FI", cfg.FechaInstalacion ?? DateTime.Today);
             AddParam(cmd, "@NPT", cfg.PorcentajeTara);
             AddParam(cmd, "@NRC", cfg.NroCopiasTicket);
@@ -169,40 +182,70 @@ public sealed class CatalogRepository
     public async Task<FoliosSistema> GetFoliosAsync(CancellationToken ct = default)
     {
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = new FbCommand("SELECT FIRST 1 FLPESAJE, FLPESAJEMOP, FLUSUARIO, FLGDESPACHO FROM DBFOLIOS ORDER BY ID", conn);
+        await using var cmd = new FbCommand("SELECT FIRST 1 * FROM DBFOLIOS", conn);
         await using FbDataReader r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await r.ReadAsync(ct).ConfigureAwait(false))
         {
             return new FoliosSistema();
+        }
+        int gDespOrd = -1;
+        for (int i = 0; i < r.FieldCount; i++)
+        {
+            if (string.Equals(r.GetName(i), "FLGDESPACHO", StringComparison.OrdinalIgnoreCase))
+            {
+                gDespOrd = i;
+                break;
+            }
         }
         return new FoliosSistema
         {
             FolioPesaje = GetInt(r, "FLPESAJE", 1),
             FolioPesajeMop = GetInt(r, "FLPESAJEMOP", 1),
             FolioUsuario = GetInt(r, "FLUSUARIO", 1),
-            FolioGuiaDespacho = r.IsDBNull(r.GetOrdinal("FLGDESPACHO")) ? null : GetInt(r, "FLGDESPACHO")
+            FolioGuiaDespacho = gDespOrd < 0 || r.IsDBNull(gDespOrd) ? null : GetInt(r, "FLGDESPACHO")
         };
     }
 
     public async Task SaveFoliosAsync(FoliosSistema folios, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(folios);
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
-            await using var cmd = new FbCommand("""
-                UPDATE OR INSERT INTO DBFOLIOS (ID, FLPESAJE, FLPESAJEMOP, FLUSUARIO, FLGDESPACHO)
-                VALUES (1, @FP, @FM, @FU, @GD)
-                MATCHING (ID)
-                """, conn, tx);
-            AddParam(cmd, "@FP", folios.FolioPesaje);
-            AddParam(cmd, "@FM", folios.FolioPesajeMop);
-            AddParam(cmd, "@FU", folios.FolioUsuario);
-            AddParam(cmd, "@GD", folios.FolioGuiaDespacho ?? 1);
-            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            if (caps.HasFoliosId)
+            {
+                await using var cmd = new FbCommand("""
+                    UPDATE OR INSERT INTO DBFOLIOS (ID, FLPESAJE, FLPESAJEMOP, FLUSUARIO, FLGDESPACHO)
+                    VALUES (1, @FP, @FM, @FU, @GD)
+                    MATCHING (ID)
+                    """, conn, tx);
+                AddParam(cmd, "@FP", folios.FolioPesaje);
+                AddParam(cmd, "@FM", folios.FolioPesajeMop);
+                AddParam(cmd, "@FU", folios.FolioUsuario);
+                AddParam(cmd, "@GD", folios.FolioGuiaDespacho ?? 1);
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await using var cmd = new FbCommand("UPDATE DBFOLIOS SET FLPESAJE = @FP, FLPESAJEMOP = @FM, FLUSUARIO = @FU", conn, tx);
+                AddParam(cmd, "@FP", folios.FolioPesaje);
+                AddParam(cmd, "@FM", folios.FolioPesajeMop);
+                AddParam(cmd, "@FU", folios.FolioUsuario);
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
 
-            await Schema.FirebirdSchemaManager.SynchronizeGeneratorAsync(conn, tx, "GEN_FLPESAJE", Math.Max(0, folios.FolioPesaje - 1), ct).ConfigureAwait(false);
-            await Schema.FirebirdSchemaManager.SynchronizeGeneratorAsync(conn, tx, "GEN_FLPESAJEMOP", Math.Max(0, folios.FolioPesajeMop - 1), ct).ConfigureAwait(false);
-            await Schema.FirebirdSchemaManager.SynchronizeGeneratorAsync(conn, tx, "GEN_FLUSUARIO", Math.Max(0, folios.FolioUsuario - 1), ct).ConfigureAwait(false);
+            if (caps.HasGenPesaje)
+            {
+                await Schema.FirebirdSchemaManager.SynchronizeGeneratorAsync(conn, tx, "GEN_FLPESAJE", Math.Max(0, folios.FolioPesaje - 1), ct).ConfigureAwait(false);
+            }
+            if (caps.HasGenMop)
+            {
+                await Schema.FirebirdSchemaManager.SynchronizeGeneratorAsync(conn, tx, "GEN_FLPESAJEMOP", Math.Max(0, folios.FolioPesajeMop - 1), ct).ConfigureAwait(false);
+            }
+            if (caps.HasGenUsuario)
+            {
+                await Schema.FirebirdSchemaManager.SynchronizeGeneratorAsync(conn, tx, "GEN_FLUSUARIO", Math.Max(0, folios.FolioUsuario - 1), ct).ConfigureAwait(false);
+            }
         }, ct).ConfigureAwait(false);
     }
 

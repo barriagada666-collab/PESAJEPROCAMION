@@ -21,10 +21,8 @@ public static class WeighingCalculator
             return (pesoA, pesoB, 0);
         }
 
-        // En despacho/movimiento puede entrar vacío y salir cargado; bruto es siempre el mayor o el peso de carga
-        return tipoPesaje == TipoPesaje.Recepcion
-            ? (Math.Max(pesoA, pesoB), Math.Min(pesoA, pesoB), Math.Abs(pesoA - pesoB))
-            : (Math.Max(pesoA, pesoB), Math.Min(pesoA, pesoB), Math.Abs(pesoA - pesoB));
+        // En recepción/despacho el bruto corresponde siempre al mayor peso y la tara al menor
+        return (Math.Max(pesoA, pesoB), Math.Min(pesoA, pesoB), Math.Abs(pesoA - pesoB));
     }
 
     /// <summary>Verifica si un camión tiene una tara registrada vigente y utilizable.</summary>

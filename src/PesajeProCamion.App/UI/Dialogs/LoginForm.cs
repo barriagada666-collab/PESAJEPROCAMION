@@ -2,12 +2,16 @@ using System.Drawing;
 using System.Windows.Forms;
 using PesajeProCamion.App.Services;
 using PesajeProCamion.App.UI.Theme;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 using PesajeProCamion.Domain.Security;
 
 namespace PesajeProCamion.App.UI.Dialogs;
 
-/// <summary>Diálogo moderno de autenticación con selección de módulo y acceso a migración/conexión BD.</summary>
+/// <summary>
+/// Diálogo corporativo de inicio de sesión inspirado en carrusel_mockups + Logo Cambiaso,
+/// con conexión directa a BD local/remota y visor de logs de errores.
+/// </summary>
 public sealed class LoginForm : Form
 {
     private readonly AppServices _services;
@@ -20,6 +24,7 @@ public sealed class LoginForm : Form
     private readonly Button _btnIngresar = new();
     private readonly Button _btnCambiarPw = new();
     private readonly Button _btnConexionBd = new();
+    private readonly Button _btnLogs = new();
     private readonly Button _btnSalir = new();
     private readonly Label _lblStatus = new();
     private List<Usuario> _usuarios = [];
@@ -32,7 +37,7 @@ public sealed class LoginForm : Form
         Load += async (_, _) => await LoadUsersAsync();
     }
 
-    public int SelectedModuleId { get; private set; } = 2; // 2=Pesaje, 1=Gestión, 0=Unificado
+    public int SelectedModuleId { get; private set; } = 0; // 2=Pesaje, 1=Gestión, 0=Suite Completa
 
     protected override void Dispose(bool disposing)
     {
@@ -45,76 +50,112 @@ public sealed class LoginForm : Form
 
     private void InitializeUi()
     {
-        Text = "Inicio de Sesión - PesajeProCamion";
+        Text = "Inicio de Sesión — PesajeProCamion";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(520, 390);
-        BackColor = AppTheme.BackgroundLight;
-        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        ClientSize = new Size(640, 420);
+        BackColor = AppTheme.NavyDark;
+        AppTheme.ApplyFormIcon(this);
         KeyPreview = true;
 
-        var header = new Panel
-        {
-            Dock = DockStyle.Top,
-            Height = 92,
-            BackColor = AppTheme.NavyDark
-        };
-        var picTruck = new PictureBox
-        {
-            Location = new Point(18, 16),
-            Size = new Size(92, 60),
-            SizeMode = PictureBoxSizeMode.Zoom,
-            Image = IconCatalog.RenderTruckBadge(92, 60)
-        };
-        var lblBrand = new Label
-        {
-            Text = "PESAJE PRO CAMIÓN",
-            Location = new Point(122, 18),
-            AutoSize = true,
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI", 16f, FontStyle.Bold)
-        };
-        var lblSubtitle = new Label
-        {
-            Text = "Sistema Integral de Control de Pesaje Comercial y Ejes MOP",
-            Location = new Point(124, 50),
-            AutoSize = true,
-            ForeColor = Color.FromArgb(190, 212, 240),
-            Font = new Font("Segoe UI", 9.25f)
-        };
-        header.Controls.AddRange([picTruck, lblBrand, lblSubtitle]);
+        var backdrop = new Panel { Dock = DockStyle.Fill };
+        backdrop.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, backdrop.ClientRectangle, includeGoldBottomAccent: false);
 
-        var body = new Panel
+        // Tarjeta central estilizada igual que mockup 02/40
+        var card = new Panel
+        {
+            Location = new Point(36, 26),
+            Size = new Size(568, 336),
+            BackColor = AppTheme.BackgroundLight,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+
+        var cardHeader = new Panel { Dock = DockStyle.Top, Height = 40 };
+        cardHeader.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, cardHeader.ClientRectangle, includeGoldBottomAccent: true);
+        var lblHead = new Label
+        {
+            Text = "  Inicio de Sesión Corporativo — Acceso Autorizado",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        cardHeader.Controls.Add(lblHead);
+
+        var leftCol = new Panel { Location = new Point(0, 40), Size = new Size(168, 296) };
+        leftCol.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, leftCol.ClientRectangle, includeGoldBottomAccent: false);
+
+        var logoCard = new Panel
+        {
+            Location = new Point(16, 26),
+            Size = new Size(136, 84),
+            BackColor = Color.White
+        };
+        var picLogo = new PictureBox
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(24, 18, 24, 14)
+            Padding = new Padding(8),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            Image = IconCatalog.GetCorporateLogo() ?? IconCatalog.RenderTruckBadge(120, 68)
+        };
+        logoCard.Controls.Add(picLogo);
+
+        var lblAccess = new Label
+        {
+            Location = new Point(12, 128),
+            Size = new Size(144, 52),
+            Text = "Pesaje Comercial\r\ny Normativa M.O.P.",
+            TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = AppTheme.GoldAccent,
+            BackColor = Color.Transparent,
+            Font = new Font("Segoe UI", 9.25f, FontStyle.Bold)
+        };
+
+        var lblRemoteBadge = new Label
+        {
+            Location = new Point(12, 200),
+            Size = new Size(144, 72),
+            Text = $"Servidor:\r\n{_services.DatabaseSettings.DataSource}\r\nPuerto {_services.DatabaseSettings.Port}",
+            TextAlign = ContentAlignment.TopCenter,
+            ForeColor = Color.LightSteelBlue,
+            BackColor = Color.Transparent,
+            Font = new Font("Segoe UI", 8.25f)
+        };
+        leftCol.Controls.AddRange([logoCard, lblAccess, lblRemoteBadge]);
+
+        var rightCol = new Panel
+        {
+            Location = new Point(168, 40),
+            Size = new Size(400, 296),
+            BackColor = AppTheme.BackgroundLight
         };
 
         var lblUser = new Label
         {
             Text = "Usuario",
-            Location = new Point(26, 20),
+            Location = new Point(22, 16),
             AutoSize = true,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            Font = AppTheme.FontBodyBold,
             ForeColor = AppTheme.TextPrimary
         };
-        _cmbUsuarios.Location = new Point(140, 17);
-        _cmbUsuarios.Width = 348;
+        _cmbUsuarios.Location = new Point(22, 38);
+        _cmbUsuarios.Width = 354;
         _cmbUsuarios.DropDownStyle = ComboBoxStyle.DropDownList;
         _cmbUsuarios.Font = new Font("Segoe UI", 10f);
 
         var lblPw = new Label
         {
             Text = "Contraseña",
-            Location = new Point(26, 62),
+            Location = new Point(22, 74),
             AutoSize = true,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            Font = AppTheme.FontBodyBold,
             ForeColor = AppTheme.TextPrimary
         };
-        _txtPassword.Location = new Point(140, 59);
-        _txtPassword.Width = 175;
+        _txtPassword.Location = new Point(22, 96);
+        _txtPassword.Width = 200;
         _txtPassword.UseSystemPasswordChar = true;
         _txtPassword.MaxLength = 32;
         _txtPassword.Font = new Font("Segoe UI", 10f);
@@ -128,77 +169,83 @@ public sealed class LoginForm : Form
             }
         };
 
-        _btnCambiarPw.Location = new Point(324, 57);
-        _btnCambiarPw.Size = new Size(164, 30);
-        AppTheme.StyleSecondaryButton(_btnCambiarPw, AppIcon.Key, "Cambiar Clave", "Cambiar contraseña del usuario actual", null, _toolTip);
+        _btnCambiarPw.Location = new Point(232, 94);
+        _btnCambiarPw.Size = new Size(144, 28);
+        AppTheme.StyleSecondaryButton(_btnCambiarPw, AppIcon.Key, "Cambiar Clave", "Cambiar contraseña del usuario seleccionado", null, _toolTip);
         _btnCambiarPw.Click += async (_, _) => await OpenChangePasswordAsync();
 
         var grpModulo = new GroupBox
         {
             Text = "Módulo de Trabajo",
-            Location = new Point(26, 102),
-            Size = new Size(462, 62),
-            Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+            Location = new Point(22, 134),
+            Size = new Size(354, 54),
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
             ForeColor = AppTheme.NavyDark
         };
-        _rbPesaje.Text = "Pesaje Camiones";
-        _rbPesaje.Location = new Point(18, 26);
-        _rbPesaje.AutoSize = true;
-        _rbPesaje.Font = new Font("Segoe UI", 9.25f);
-        _rbGestion.Text = "Gestión e Informes";
-        _rbGestion.Location = new Point(158, 26);
-        _rbGestion.AutoSize = true;
-        _rbGestion.Font = new Font("Segoe UI", 9.25f);
-        _rbUnificado.Text = "Suite Completa";
-        _rbUnificado.Location = new Point(322, 26);
-        _rbUnificado.AutoSize = true;
-        _rbUnificado.Checked = true;
-        _rbUnificado.Font = new Font("Segoe UI", 9.25f);
+        _rbPesaje.Text = "Pesaje"; _rbPesaje.Location = new Point(12, 22); _rbPesaje.AutoSize = true; _rbPesaje.Font = AppTheme.FontBody;
+        _rbGestion.Text = "Gestión"; _rbGestion.Location = new Point(108, 22); _rbGestion.AutoSize = true; _rbGestion.Font = AppTheme.FontBody;
+        _rbUnificado.Text = "Suite Completa"; _rbUnificado.Location = new Point(206, 22); _rbUnificado.AutoSize = true; _rbUnificado.Checked = true; _rbUnificado.Font = AppTheme.FontBody;
         grpModulo.Controls.AddRange([_rbPesaje, _rbGestion, _rbUnificado]);
 
-        _lblStatus.Location = new Point(26, 174);
-        _lblStatus.Size = new Size(462, 24);
-        _lblStatus.ForeColor = AppTheme.TextMuted;
-        _lblStatus.Font = new Font("Segoe UI", 8.75f);
-
-        _btnIngresar.Location = new Point(26, 212);
-        _btnIngresar.Size = new Size(148, 36);
-        AppTheme.StylePrimaryButton(_btnIngresar, AppIcon.Check, "Ingresar", "Iniciar sesión en el sistema", _toolTip);
+        _btnIngresar.Location = new Point(22, 200);
+        _btnIngresar.Size = new Size(116, 36);
+        AppTheme.StylePrimaryButton(_btnIngresar, AppIcon.Check, "Ingresar", "Autenticar e ingresar al sistema", _toolTip);
         _btnIngresar.Click += async (_, _) => await AuthenticateAsync();
 
-        _btnConexionBd.Location = new Point(184, 212);
-        _btnConexionBd.Size = new Size(154, 36);
-        AppTheme.StyleSecondaryButton(_btnConexionBd, AppIcon.Migrate, "Base de Datos", "Configurar servidor Firebird o migrar archivo .GDB legacy", null, _toolTip);
+        _btnConexionBd.Location = new Point(146, 200);
+        _btnConexionBd.Size = new Size(124, 36);
+        AppTheme.StyleSecondaryButton(_btnConexionBd, AppIcon.Database, "Servidor BD", "Configurar conexión local o remota y probar ruta UNC/TCP", null, _toolTip);
         _btnConexionBd.Click += async (_, _) =>
         {
             using var dlg = new DatabaseConnectionForm(_services);
             if (dlg.ShowDialog(this) == DialogResult.OK)
             {
+                lblRemoteBadge.Text = $"Servidor:\r\n{_services.DatabaseSettings.DataSource}\r\nPuerto {_services.DatabaseSettings.Port}";
                 await LoadUsersAsync();
             }
         };
 
-        _btnSalir.Location = new Point(348, 212);
-        _btnSalir.Size = new Size(140, 36);
-        AppTheme.StyleDangerButton(_btnSalir, AppIcon.Power, "Salir del Sistema", "Cerrar la aplicación", _toolTip);
+        _btnSalir.Location = new Point(278, 200);
+        _btnSalir.Size = new Size(98, 36);
+        AppTheme.StyleDangerButton(_btnSalir, AppIcon.Power, "Salir", "Cerrar la aplicación", _toolTip);
         _btnSalir.Click += (_, _) =>
         {
             DialogResult = DialogResult.Cancel;
             Close();
         };
 
+        _btnLogs.Location = new Point(22, 244);
+        _btnLogs.Size = new Size(156, 32);
+        AppTheme.StyleSecondaryButton(_btnLogs, AppIcon.Logs, "Logs de Errores", "Abrir diagnóstico y registro de errores", AppTheme.AccentAmber, _toolTip);
+        _btnLogs.Click += (_, _) => { using var f = new ErrorLogViewerDialog(); f.ShowDialog(this); };
+
+        rightCol.Controls.AddRange([lblUser, _cmbUsuarios, lblPw, _txtPassword, _btnCambiarPw, grpModulo, _btnIngresar, _btnConexionBd, _btnSalir, _btnLogs]);
+        card.Controls.AddRange([leftCol, rightCol, cardHeader]);
+
+        var footerCard = new Panel
+        {
+            Location = new Point(36, 372),
+            Size = new Size(568, 32),
+            BackColor = AppTheme.SurfaceCard
+        };
+        _lblStatus.Dock = DockStyle.Fill;
+        _lblStatus.Padding = new Padding(10, 0, 10, 0);
+        _lblStatus.TextAlign = ContentAlignment.MiddleLeft;
+        _lblStatus.Font = new Font("Segoe UI", 8.75f, FontStyle.Bold);
+        footerCard.Controls.Add(_lblStatus);
+
+        backdrop.Controls.AddRange([card, footerCard]);
+        Controls.Add(backdrop);
+
         AcceptButton = _btnIngresar;
         CancelButton = _btnSalir;
-
-        body.Controls.AddRange([lblUser, _cmbUsuarios, lblPw, _txtPassword, _btnCambiarPw, grpModulo, _lblStatus, _btnIngresar, _btnConexionBd, _btnSalir]);
-        Controls.AddRange([body, header]);
     }
 
     private async Task LoadUsersAsync()
     {
         try
         {
-            _lblStatus.Text = "Conectando a base de datos Firebird...";
+            _lblStatus.Text = $"Conectando a {_services.DatabaseSettings.DataSource}:{_services.DatabaseSettings.Port}...";
             _lblStatus.ForeColor = AppTheme.NavyPrimary;
             await _services.RefreshMetadataAsync();
             _usuarios = await _services.Security.GetUsuariosAsync(soloActivos: true);
@@ -206,15 +253,19 @@ public sealed class LoginForm : Form
             _cmbUsuarios.DataSource = _usuarios;
             _cmbUsuarios.DisplayMember = nameof(Usuario.Nombre);
             _cmbUsuarios.ValueMember = nameof(Usuario.Id);
-            _lblStatus.Text = $"Conectado: {_services.BasculaActual.NombreEmpresa} ({_usuarios.Count} usuarios activos)";
+            string emp = string.IsNullOrWhiteSpace(_services.BasculaActual.NombreEmpresa) ? _services.DatabaseSettings.DatabasePath : _services.BasculaActual.NombreEmpresa;
+            _lblStatus.Text = $"Conectado a {_services.DatabaseSettings.DataSource}: {emp} ({_usuarios.Count} usuarios activos)";
             _lblStatus.ForeColor = AppTheme.AccentEmerald;
             _btnIngresar.Enabled = _usuarios.Count > 0;
+            _btnIngresar.BackColor = _btnIngresar.Enabled ? AppTheme.NavyPrimary : AppTheme.BorderSubtle;
         }
         catch (Exception ex)
         {
-            _lblStatus.Text = $"Sin conexión a BD ({ex.Message}). Use 'Base de Datos' para configurar o migrar.";
+            AppLogger.Error("Login", "Fallo al cargar usuarios desde Firebird.", ex);
+            _lblStatus.Text = $"Sin conexión a BD: {ex.Message} — Abra 'Servidor BD' o 'Logs de Errores'.";
             _lblStatus.ForeColor = AppTheme.AccentDanger;
             _btnIngresar.Enabled = false;
+            _btnIngresar.BackColor = AppTheme.BorderSubtle;
         }
     }
 
@@ -229,31 +280,39 @@ public sealed class LoginForm : Form
         int modulo = _rbPesaje.Checked ? 2 : (_rbGestion.Checked ? 1 : 0);
         int sistemaLog = modulo == 0 ? 2 : modulo;
 
-        Usuario? authenticated = await _services.Security.AuthenticateAsync(selected.Id, _txtPassword.Text, sistemaLog);
-        if (authenticated is null)
+        try
         {
-            MessageBox.Show(this, "Contraseña incorrecta o usuario inactivo.", "Acceso Denegado", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            _txtPassword.SelectAll();
-            _txtPassword.Focus();
-            return;
-        }
+            Usuario? authenticated = await _services.Security.AuthenticateAsync(selected.Id, _txtPassword.Text, sistemaLog);
+            if (authenticated is null)
+            {
+                MessageBox.Show(this, "Contraseña incorrecta o usuario inactivo.", "Acceso Denegado", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _txtPassword.SelectAll();
+                _txtPassword.Focus();
+                return;
+            }
 
-        if (modulo == 2 && !PermissionService.EstaAutorizado(authenticated, AccionAutorizacion.IngresarPesaje))
-        {
-            MessageBox.Show(this, "El usuario no tiene permisos para el módulo de Pesaje de Camiones.", "Acceso Restringido", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        if (modulo == 1 && !PermissionService.EstaAutorizado(authenticated, AccionAutorizacion.IngresarGestion))
-        {
-            MessageBox.Show(this, "El usuario no tiene permisos para el módulo de Gestión e Informes.", "Acceso Restringido", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
+            if (modulo == 2 && !PermissionService.EstaAutorizado(authenticated, AccionAutorizacion.IngresarPesaje))
+            {
+                MessageBox.Show(this, "El usuario no tiene permisos para el módulo de Pesaje de Camiones.", "Acceso Restringido", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (modulo == 1 && !PermissionService.EstaAutorizado(authenticated, AccionAutorizacion.IngresarGestion))
+            {
+                MessageBox.Show(this, "El usuario no tiene permisos para el módulo de Gestión e Informes.", "Acceso Restringido", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
-        _services.UsuarioActual = authenticated;
-        _services.SistemaActivoId = sistemaLog;
-        SelectedModuleId = modulo;
-        DialogResult = DialogResult.OK;
-        Close();
+            _services.UsuarioActual = authenticated;
+            _services.SistemaActivoId = sistemaLog;
+            SelectedModuleId = modulo;
+            DialogResult = DialogResult.OK;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Login", "Error inesperado durante autenticación.", ex);
+            MessageBox.Show(this, $"Error durante el inicio de sesión:\r\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private async Task OpenChangePasswordAsync()
@@ -279,7 +338,7 @@ public sealed class LoginForm : Form
         {
             await _services.Security.ChangePasswordAsync(auth.Id, dlg.NuevaPassword, auth.Id);
             _txtPassword.Text = dlg.NuevaPassword;
-            MessageBox.Show(this, "Contraseña actualizada con cifrado PBKDF2-SHA256.", "Seguridad", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "Contraseña actualizada correctamente.", "Seguridad", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 }

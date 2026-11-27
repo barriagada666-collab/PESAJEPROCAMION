@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Reflection;
 
 namespace PesajeProCamion.App.UI.Theme;
 
@@ -42,13 +43,48 @@ public enum AppIcon
     Shift,
     Migrate,
     ManualWeight,
-    Tare
+    Tare,
+    Database,
+    Logs
 }
 
-/// <summary>Generador vectorial nítido de íconos vectoriales High-DPI y diagramas de camión para formularios y botones.</summary>
+/// <summary>
+/// Generador vectorial High-DPI y cargador del logo corporativo Cambiaso / emblema industrial
+/// desde recursos embebidos (100% compatible con despliegue portable single-file).
+/// </summary>
 public static class IconCatalog
 {
     private static readonly Dictionary<(AppIcon, int, int), Bitmap> Cache = new();
+    private static Image? _corporateLogo;
+
+    public static Image? GetCorporateLogo()
+    {
+        if (_corporateLogo is not null)
+        {
+            return _corporateLogo;
+        }
+
+        string diskPath = Path.Combine(AppContext.BaseDirectory, "Assets", "logo_cambiaso.png");
+        if (File.Exists(diskPath))
+        {
+            using var fs = new FileStream(diskPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            _corporateLogo = Image.FromStream(fs);
+            return _corporateLogo;
+        }
+
+        Assembly asm = typeof(IconCatalog).Assembly;
+        string? resName = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("logo_cambiaso.png", StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(resName))
+        {
+            using Stream? s = asm.GetManifestResourceStream(resName);
+            if (s is not null)
+            {
+                _corporateLogo = Image.FromStream(s);
+                return _corporateLogo;
+            }
+        }
+        return null;
+    }
 
     public static Image Get(AppIcon icon, int size, Color color)
     {
@@ -222,6 +258,7 @@ public static class IconCatalog
             case AppIcon.List:
             case AppIcon.Audit:
             case AppIcon.Shift:
+            case AppIcon.Logs:
                 g.DrawLine(pen, pad + 1, pad + w * 0.22f, s - pad - 1, pad + w * 0.22f);
                 g.DrawLine(pen, pad + 1, s * 0.50f, s - pad - 1, s * 0.50f);
                 g.DrawLine(pen, pad + 1, pad + w * 0.78f, s - pad - 1, pad + w * 0.78f);
@@ -237,6 +274,13 @@ public static class IconCatalog
             case AppIcon.Migrate:
                 g.DrawArc(pen, pad + 1, pad + 1, w - 2, w - 2, 30, 290);
                 g.DrawLine(pen, s - pad - 4, pad + 2, s - pad, pad + 6);
+                break;
+
+            case AppIcon.Database:
+                g.DrawEllipse(pen, pad + 1, pad, w - 2, w * 0.34f);
+                g.DrawLine(pen, pad + 1, pad + w * 0.17f, pad + 1, s - pad - w * 0.17f);
+                g.DrawLine(pen, s - pad - 1, pad + w * 0.17f, s - pad - 1, s - pad - w * 0.17f);
+                g.DrawArc(pen, pad + 1, s - pad - w * 0.34f, w - 2, w * 0.34f, 0, 180);
                 break;
 
             case AppIcon.Check:
@@ -293,6 +337,48 @@ public static class IconCatalog
         return bmp;
     }
 
+    public static Bitmap RenderIndustrialSplashEmblem(int size)
+    {
+        var bmp = new Bitmap(size, size);
+        using Graphics g = Graphics.FromImage(bmp);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        g.Clear(Color.Transparent);
+
+        float c = size / 2f;
+        float outerR = size * 0.44f;
+        using var gearPen = new Pen(Color.FromArgb(190, 214, 224), Math.Max(3f, size * 0.055f));
+        for (int i = 0; i < 16; i++)
+        {
+            double ang = i * (Math.PI * 2.0 / 16.0);
+            float x1 = c + (float)Math.Cos(ang) * (outerR * 0.85f);
+            float y1 = c + (float)Math.Sin(ang) * (outerR * 0.85f);
+            float x2 = c + (float)Math.Cos(ang) * outerR;
+            float y2 = c + (float)Math.Sin(ang) * outerR;
+            g.DrawLine(gearPen, x1, y1, x2, y2);
+        }
+
+        using var ringBrush = new SolidBrush(AppTheme.NavyDark);
+        using var ringPen = new Pen(AppTheme.TealHover, Math.Max(4f, size * 0.06f));
+        g.FillEllipse(ringBrush, c - outerR * 0.78f, c - outerR * 0.78f, outerR * 1.56f, outerR * 1.56f);
+        g.DrawEllipse(ringPen, c - outerR * 0.78f, c - outerR * 0.78f, outerR * 1.56f, outerR * 1.56f);
+
+        using var goldPen = new Pen(AppTheme.GoldAccent, Math.Max(2.2f, size * 0.025f));
+        g.DrawEllipse(goldPen, c - outerR * 0.52f, c - outerR * 0.52f, outerR * 1.04f, outerR * 1.04f);
+
+        Image? logo = GetCorporateLogo();
+        if (logo is not null)
+        {
+            // Tomar el emblema dorado superior del PNG oficial y centrarlo dentro del engranaje
+            var srcRect = new RectangleF(logo.Width * 0.30f, 0f, logo.Width * 0.40f, logo.Height * 0.44f);
+            float inner = outerR * 0.82f;
+            var dstRect = new RectangleF(c - inner / 2f, c - inner / 2f, inner, inner);
+            g.DrawImage(logo, dstRect, srcRect, GraphicsUnit.Pixel);
+        }
+
+        return bmp;
+    }
+
     public static Bitmap RenderTruckBadge(int width, int height)
     {
         var bmp = new Bitmap(width, height);
@@ -300,25 +386,22 @@ public static class IconCatalog
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Color.Transparent);
 
-        using var platformBrush = new SolidBrush(AppTheme.AccentAmber);
+        using var platformBrush = new SolidBrush(AppTheme.GoldAccent);
         using var trailerBrush = new SolidBrush(Color.White);
-        using var cabBrush = new SolidBrush(Color.FromArgb(224, 232, 244));
+        using var cabBrush = new SolidBrush(Color.FromArgb(224, 236, 240));
         using var glassBrush = new SolidBrush(AppTheme.NavyPrimary);
-        using var wheelBrush = new SolidBrush(Color.FromArgb(30, 41, 59));
+        using var wheelBrush = new SolidBrush(AppTheme.NavyDark);
         using var rimBrush = new SolidBrush(Color.LightGray);
 
         float pad = 4f;
         float uw = width - 2 * pad;
         float uh = height - 2 * pad;
 
-        // Trailer
         g.FillRectangle(trailerBrush, pad + uw * 0.04f, pad + uh * 0.14f, uw * 0.58f, uh * 0.54f);
-        // Cab
         g.FillRectangle(cabBrush, pad + uw * 0.64f, pad + uh * 0.28f, uw * 0.31f, uh * 0.40f);
         g.FillRectangle(glassBrush, pad + uw * 0.74f, pad + uh * 0.34f, uw * 0.16f, uh * 0.16f);
-        // Platform
         g.FillRectangle(platformBrush, pad, pad + uh * 0.80f, uw, uh * 0.12f);
-        // Wheels
+
         foreach (float cx in new[] { 0.18f, 0.48f, 0.78f })
         {
             float r = Math.Min(uw, uh) * 0.16f;

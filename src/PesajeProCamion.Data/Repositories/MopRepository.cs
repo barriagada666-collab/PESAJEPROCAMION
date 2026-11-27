@@ -83,9 +83,13 @@ public sealed class MopRepository
 
     public async Task<List<DemoMuestra>> GetDemoSamplesAsync(CancellationToken ct = default)
     {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         var list = new List<DemoMuestra>();
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = new FbCommand("SELECT PESO, HORA FROM DEMO1 ORDER BY ID_MUESTRA", conn);
+        string sql = caps.HasDemoIdColumn
+            ? "SELECT PESO, HORA FROM DEMO1 ORDER BY ID_MUESTRA"
+            : "SELECT PESO, HORA FROM DEMO1";
+        await using var cmd = new FbCommand(sql, conn);
         await using FbDataReader r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await r.ReadAsync(ct).ConfigureAwait(false))
         {
@@ -97,13 +101,26 @@ public sealed class MopRepository
     public async Task<int> SavePesajeMopAsync(PesajeMop p, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(p);
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         string pat = ChileanValidators.NormalizarPatente(p.Patente);
         return await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
             if (p.FolioMop <= 0)
             {
-                await using var gen = new FbCommand("SELECT NEXT VALUE FOR GEN_FLPESAJEMOP FROM RDB$DATABASE", conn, tx);
-                p.FolioMop = Convert.ToInt32(await gen.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+                if (caps.HasGenMop)
+                {
+                    await using var gen = new FbCommand("SELECT NEXT VALUE FOR GEN_FLPESAJEMOP FROM RDB$DATABASE", conn, tx);
+                    p.FolioMop = Convert.ToInt32(await gen.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    await using var maxCmd = new FbCommand("SELECT COALESCE((SELECT FIRST 1 FLPESAJEMOP FROM DBFOLIOS), 1), COALESCE((SELECT MAX(FLMOP) FROM DBMOPPJES), 0) FROM RDB$DATABASE", conn, tx);
+                    await using FbDataReader mr = await maxCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                    await mr.ReadAsync(ct).ConfigureAwait(false);
+                    int fMop = Convert.ToInt32(mr.GetValue(0), CultureInfo.InvariantCulture);
+                    int maxMop = Convert.ToInt32(mr.GetValue(1), CultureInfo.InvariantCulture);
+                    p.FolioMop = Math.Max(fMop, maxMop + 1);
+                }
             }
 
             await using var updBasc = new FbCommand("UPDATE DBBASCULAS SET FLPESAJEMOP = @NEXT WHERE BASCULA = @B", conn, tx);
@@ -111,7 +128,10 @@ public sealed class MopRepository
             AddParam(updBasc, "@B", p.Bascula);
             await updBasc.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-            await using var updFol = new FbCommand("UPDATE DBFOLIOS SET FLPESAJEMOP = @NEXT WHERE ID = 1", conn, tx);
+            string folSql = caps.HasFoliosId
+                ? "UPDATE DBFOLIOS SET FLPESAJEMOP = @NEXT WHERE ID = 1"
+                : "UPDATE DBFOLIOS SET FLPESAJEMOP = @NEXT";
+            await using var updFol = new FbCommand(folSql, conn, tx);
             AddParam(updFol, "@NEXT", p.FolioMop + 1);
             await updFol.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 

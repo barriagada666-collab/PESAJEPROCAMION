@@ -4,6 +4,7 @@ using PesajeProCamion.App.UI.Catalogs;
 using PesajeProCamion.App.UI.Dialogs;
 using PesajeProCamion.App.UI.Main;
 using PesajeProCamion.App.UI.Management;
+using PesajeProCamion.App.UI.Theme;
 using PesajeProCamion.App.UI.Weighing;
 using PesajeProCamion.Data.Configuration;
 using PesajeProCamion.Domain.Entities;
@@ -50,14 +51,19 @@ public sealed class UiSmokeAndAuditTests
                     }
                 };
 
+                Assert.NotNull(IconCatalog.GetCorporateLogo());
+
                 Control[] components =
                 [
+                    new SplashForm(),
                     new LoginForm(services),
                     new ChangePasswordForm(),
                     new DatabaseConnectionForm(services),
+                    new ErrorLogViewerDialog(),
                     new AcercaForm(services),
                     new ManualWeightDialog(10000),
                     new FolioTicketDialog(),
+                    new TicketCopiesDialog(2),
                     new VisorSetupForm(services),
                     new DinamicoSetupForm(services),
                     new InstalacionForm(services),

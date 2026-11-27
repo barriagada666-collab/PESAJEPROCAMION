@@ -1,5 +1,7 @@
 using System.IO.Compression;
 using System.Text;
+using PesajeProCamion.Data.Configuration;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 using PesajeProCamion.Hardware.Export;
 using PesajeProCamion.Hardware.Printing;
@@ -97,5 +99,29 @@ public sealed class HardwareAndExportTests
         {
             Directory.Delete(tmpDir, true);
         }
+    }
+
+    [Fact]
+    public void LineDelimitedSerialParser_And_RemoteUncPathResolver_And_AppLogger_WorkCorrectly()
+    {
+        // 1. Parser RS-232 sin STX (modo línea CR/LF) y FeedRawAsciiTestFrame
+        var cfgNoStx = new ConfiguracionSistema { VisorStx = 0, VisorPosData = 1, VisorLenData = 8, VLimit = 1, VDelta = 10 };
+        using var scale = new ScaleReaderService();
+        scale.UpdateConfig(cfgNoStx);
+        int seenKg = 0;
+        scale.ReadingReceived += (_, e) => seenKg = e.WeightKg;
+        scale.FeedRawAsciiTestFrame("ST,GS,+ 18450 kg\r\n");
+        Assert.Equal(18450, seenKg);
+
+        // 2. Resolución automática de ruta compartida de red UNC -> Host + candidatos Firebird
+        (string? host, IReadOnlyList<string> candidates) = RemoteDatabaseResolver.BuildCandidates("localhost", @"\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB");
+        Assert.Equal("192.168.2.56", host);
+        Assert.Contains("/bdwm/placilla2/WMDBSPC.GDB", candidates, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(@"C:\bdwm\placilla2\WMDBSPC.GDB", candidates, StringComparer.OrdinalIgnoreCase);
+
+        // 3. AppLogger registra y exporta errores
+        AppLogger.Info("UnitTest", "Evento de prueba");
+        AppLogger.ErrorDetail("UnitTest", "Error de prueba controlado", "Detalle de pila");
+        Assert.Contains(AppLogger.GetEntries(), e => e.Message == "Error de prueba controlado");
     }
 }

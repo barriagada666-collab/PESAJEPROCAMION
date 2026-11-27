@@ -4,41 +4,30 @@
 
 ```mermaid
 flowchart TD
-    APP["PesajeProCamion.App (WinForms .NET 10 High-DPI)"]
-    DOMAIN["PesajeProCamion.Domain (Entidades, Validadores, RBAC, MOP)"]
-    DATA["PesajeProCamion.Data (FirebirdSql, Repositorios, Migrador ODS 9.1)"]
-    HW["PesajeProCamion.Hardware (Serial RS-232, Dinámico, Tickets, Excel/DBF)"]
-    FB[("Firebird SQL 2.5+ (UTF8 / Dialecto 3)")]
-    LEGACY[("Legacy InterBase ODS 9.1 .GDB")]
+    APP["PesajeProCamion.App (WinForms .NET 10 High-DPI | Petrol Teal + Gold)"]
+    DOMAIN["PesajeProCamion.Domain (Entidades, Validadores, RBAC, MOP, AppLogger)"]
+    DATA["PesajeProCamion.Data (FirebirdSql, RemoteResolver, Capacidades, Migrador ODS 9.1)"]
+    HW["PesajeProCamion.Hardware (Visor RS-232, Dinámico, Tickets + Logo, Excel/DBF)"]
+    FB_LOCAL[("Firebird 2.5+ Local (.FDB UTF8 Dialecto 3)")]
+    FB_REMOTE[("Firebird/InterBase Remoto en Red (ej. 192.168.2.56:3050)")]
+    LEGACY[("Archivo Legacy ODS 9.1 (.GDB)")]
 
     APP --> DOMAIN
     APP --> DATA
     APP --> HW
     DATA --> DOMAIN
     HW --> DOMAIN
-    DATA --> FB
-    DATA -. "Lectura Binaria Directa" .-> LEGACY
+    DATA --> FB_LOCAL
+    DATA --> FB_REMOTE
+    DATA -. "Lectura Binaria FileShare.ReadWrite" .-> LEGACY
 ```
 
----
-
-## 2. Descripción de Proyectos
+## 2. Proyectos de la Solución
 
 | Proyecto | Responsabilidad |
 | :--- | :--- |
-| `PesajeProCamion.Domain` | Modelos puros (`Pesaje`, `Camion`, `Cliente`, `Usuario`, `PesajeMop`), validadores chilenos Módulo 11 (`ChileanValidators`), cálculos de neto/tara/MOP (`WeighingCalculator`), hashing `PBKDF2-SHA256` (`PasswordHasher`) y matriz RBAC (`PermissionService`). |
-| `PesajeProCamion.Data` | Gestión de esquema (`FirebirdSchemaManager`), lector binario `Ods9BinaryReader`, migrador `Ods9Migrator`, repositorios parametrizados (`CatalogRepository`, `SecurityRepository`, `WeighingRepository`, `MopRepository`). |
-| `PesajeProCamion.Hardware` | Parser serial configurable (`SerialFrameParser`), lector/simulador RS-232 (`ScaleReaderService`), algoritmo dinámico (`DynamicAxleProcessor`), tickets RAW y gráficos (`TicketPrinterService`) y exportación nativa `.xlsx`/`.dbf`/`.csv` (`DataExporter`). |
-| `PesajeProCamion.App` | Interfaz WinForms unificada High-DPI (`MainShellForm`), visor digital 7-segmentos (`DigitalWeightDisplay`), iconos vectoriales consistentes (`IconCatalog`), catálogos CRUD, operación comercial/MOP e informes. |
-| `PesajeProCamion.Tests` | Suite xUnit automatizada: pruebas unitarias, integración real sobre Firebird 2.5 + `.GDB`, funcionales, auditoría UI STA y pruebas de estrés. |
-
----
-
-## 3. Modelo de Seguridad (RBAC)
-
-- **Contraseñas**: Derivadas con `PBKDF2-SHA256`, 100,000 iteraciones y salt aleatorio de 16 bytes; comparación en tiempo constante (`CryptographicOperations.FixedTimeEquals`).
-- **Control de Acceso**: Toda operación valida `PermissionService.EstaAutorizado(usuario, AccionAutorizacion)`:
-  - `PerfilOperacion.Administracion (2)` o `SupervisorSistema`: acceso total, usuarios y parámetros críticos.
-  - `PerfilOperacion.OperacionPesaje (0)`: pesaje comercial/MOP según privilegios (`Agregar`, `Modificar`, `Eliminar`, `Imprimir`).
-  - `PerfilOperacion.Consulta (1)`: solo lectura e informes.
-- **Auditoría**: Tabla `DBAUDITLOG` registra creación/edición de usuarios, ingresos, salidas, modificaciones de pesaje, anulaciones y eliminaciones de tránsito.
+| `PesajeProCamion.Domain` | Entidades puras, validadores chilenos Módulo 11 y patentes (`ChileanValidators`), cálculos comerciales y normativa MOP (`WeighingCalculator`), hashing `PBKDF2-SHA256` (`PasswordHasher`), RBAC (`PermissionService`) y sistema centralizado de logs (`AppLogger`). |
+| `PesajeProCamion.Data` | `RemoteDatabaseResolver` para rutas UNC de red y TCP 3050, detección automática de capacidades `DatabaseCapabilities` (soporta indistintamente esquema moderno UTF8 y esquema legacy remoto ODS 9.1 Dialecto 1 sin generadores ni `DBAUDITLOG`), `FirebirdSchemaManager`, `Ods9BinaryReader` y `Ods9Migrator`. |
+| `PesajeProCamion.Hardware` | Parser serial `SerialFrameParser` (modos STX + CR/LF sin STX), monitor/simulador `ScaleReaderService`, algoritmo dinámico `DynamicAxleProcessor`, impresión gráfica/RAW de tickets con logotipo (`TicketPrinterService`) y exportación nativa `.xlsx`/`.dbf`/`.csv` (`DataExporter`). |
+| `PesajeProCamion.App` | Tema corporativo Petrol Teal + Dorado (`AppTheme`, `IconCatalog`), `SplashForm`, `LoginForm`, `DatabaseConnectionForm` (Probar / Aplicar / Guardar), `ErrorLogViewerDialog`, `VisorSetupForm`, `PesajeWorkspaceControl`, `PesajeMopForm`, `GestionPesajesControl`, `ReportsWorkspaceControl` y catálogos CRUD. |
+| `PesajeProCamion.Tests` | Suite xUnit automatizada: unitarias, integración real (Firebird local + prueba UNC remota), funcionales, auditoría STA UI y rendimiento. |

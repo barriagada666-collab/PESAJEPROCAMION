@@ -1,4 +1,6 @@
 using System.IO.Ports;
+using System.Text;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 
 namespace PesajeProCamion.Hardware.Scale;
@@ -25,7 +27,7 @@ public sealed class ScaleReadingEventArgs : EventArgs
     public string RawData { get; }
 }
 
-/// <summary>Servicio unificado de lectura de báscula RS-232 con modo simulación/demo seguro cuando no hay puerto físico.</summary>
+/// <summary>Servicio unificado de visor RS-232 con inyección de tramas, diagnóstico en vivo y simulación segura.</summary>
 public sealed class ScaleReaderService : IDisposable
 {
     private readonly SerialFrameParser _parser = new();
@@ -38,8 +40,12 @@ public sealed class ScaleReaderService : IDisposable
     public event EventHandler<ScaleReadingEventArgs>? ReadingReceived;
 
     public bool IsOpen => _port?.IsOpen == true || IsSimulationActive;
+    public bool IsSerialOpen => _port?.IsOpen == true;
     public bool IsSimulationActive { get; private set; }
     public int CurrentWeightKg => _currentWeightKg;
+    public long BytesReceived { get; private set; }
+    public long FramesParsed { get; private set; }
+    public string LastRawFrame { get; private set; } = string.Empty;
     public string StatusDescription { get; private set; } = "DESCONECTADO";
 
     public static string[] GetAvailablePorts() => SerialPort.GetPortNames().OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -48,6 +54,32 @@ public sealed class ScaleReaderService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(cfg);
         _config = cfg;
+    }
+
+    public void FeedRawAsciiTestFrame(string asciiFrame)
+    {
+        ArgumentNullException.ThrowIfNull(asciiFrame);
+        byte[] bytes = Encoding.ASCII.GetBytes(asciiFrame);
+        ProcessIncomingBytes(bytes);
+    }
+
+    public bool TrySendCommand(string command)
+    {
+        if (_port is null || !_port.IsOpen)
+        {
+            return false;
+        }
+        try
+        {
+            _port.Write(command);
+            AppLogger.Serial("VisorCOM", $"Comando enviado a {_port.PortName}: {command.Trim()}");
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
+        {
+            AppLogger.Error("VisorCOM", $"Error enviando comando a {_port.PortName}", ex);
+            return false;
+        }
     }
 
     public bool TryOpenSerial(HardwareSetup setup, ConfiguracionSistema cfg, out string? errorMessage)
@@ -79,13 +111,16 @@ public sealed class ScaleReaderService : IDisposable
             _port = new SerialPort(portName, setup.BaudRateReal, parity, setup.DataBitsReal, stopBits)
             {
                 ReadTimeout = 500,
-                WriteTimeout = 500
+                WriteTimeout = 500,
+                DtrEnable = true,
+                RtsEnable = true
             };
             _port.DataReceived += OnSerialDataReceived;
             _port.Open();
 
             IsSimulationActive = false;
-            StatusDescription = $"COMUNICACIÓN DIRECTA ({portName} @ {setup.BaudRateReal})";
+            StatusDescription = $"VISOR DIRECTO ({portName} @ {setup.BaudRateReal} bps)";
+            AppLogger.Serial("VisorCOM", StatusDescription);
             errorMessage = null;
             return true;
         }
@@ -94,6 +129,7 @@ public sealed class ScaleReaderService : IDisposable
             _port?.Dispose();
             _port = null;
             StatusDescription = $"SIN INDICADOR EN {portName}";
+            AppLogger.Warn("VisorCOM", $"No se pudo abrir {portName}: {ex.Message}");
             errorMessage = ex.Message;
             ReadingReceived?.Invoke(this, new ScaleReadingEventArgs(0, false, true, false, true, false, ex.Message));
             return false;
@@ -174,30 +210,40 @@ public sealed class ScaleReaderService : IDisposable
             }
             byte[] buf = new byte[count];
             int read = _port.Read(buf, 0, count);
-            ParsedWeightFrame? frame = _parser.TryFeedBytes(buf.AsSpan(0, read), _config);
-            if (frame is null)
-            {
-                return;
-            }
-
-            if (!frame.Valid)
-            {
-                ReadingReceived?.Invoke(this, new ScaleReadingEventArgs(_currentWeightKg, false, false, false, false, true, frame.RawFrame));
-                return;
-            }
-
-            _currentWeightKg = frame.PesoKg;
-            bool stable = _parser.UpdateStability(frame.PesoKg, _config);
-            bool isZero = Domain.Services.WeighingCalculator.EstaEnCero(frame.PesoKg, _config);
-            ReadingReceived?.Invoke(this, new ScaleReadingEventArgs(frame.PesoKg, stable, isZero, _config.DinamicoActivo, false, false, frame.RawFrame));
+            ProcessIncomingBytes(buf.AsSpan(0, read));
         }
         catch (TimeoutException)
         {
+            AppLogger.Warn("VisorCOM", "Timeout leyendo puerto serial de báscula.");
             ReadingReceived?.Invoke(this, new ScaleReadingEventArgs(_currentWeightKg, false, false, false, true, false, "Timeout"));
         }
         catch (InvalidOperationException)
         {
             // Puerto cerrado concurrentemente
+        }
+    }
+
+    private void ProcessIncomingBytes(ReadOnlySpan<byte> span)
+    {
+        BytesReceived += span.Length;
+        ParsedWeightFrame? frame = _parser.TryFeedBytes(span, _config);
+        while (frame is not null)
+        {
+            LastRawFrame = frame.RawFrame;
+            if (!frame.Valid)
+            {
+                AppLogger.Serial("VisorCOM", $"Trama inválida: {frame.Error} ({frame.RawFrame})");
+                ReadingReceived?.Invoke(this, new ScaleReadingEventArgs(_currentWeightKg, false, false, false, false, true, frame.RawFrame));
+            }
+            else
+            {
+                FramesParsed++;
+                _currentWeightKg = frame.PesoKg;
+                bool stable = _parser.UpdateStability(frame.PesoKg, _config);
+                bool isZero = Domain.Services.WeighingCalculator.EstaEnCero(frame.PesoKg, _config);
+                ReadingReceived?.Invoke(this, new ScaleReadingEventArgs(frame.PesoKg, stable, isZero, _config.DinamicoActivo, false, false, frame.RawFrame));
+            }
+            frame = _parser.TryFeedBytes([], _config);
         }
     }
 

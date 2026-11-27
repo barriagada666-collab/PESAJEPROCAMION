@@ -32,13 +32,14 @@ public sealed class VisorSetupForm : Form
     {
         ArgumentNullException.ThrowIfNull(services);
         _services = services;
-        Text = "Configuración de Visor de Peso";
-        ClientSize = new Size(650, 440);
+        Text = "Configuración de Visor de Peso RS-232";
+        ClientSize = new Size(680, 500);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         BackColor = AppTheme.BackgroundLight;
+        AppTheme.ApplyFormIcon(this);
         BuildUi();
         Load += async (_, _) => await LoadCurrentAsync();
         FormClosing += (_, _) => _services.Scale.ReadingReceived -= OnReading;
@@ -46,31 +47,54 @@ public sealed class VisorSetupForm : Form
 
     private void BuildUi()
     {
-        _previewLcd.Location = new Point(18, 16);
+        var header = new Panel { Dock = DockStyle.Top, Height = 44 };
+        header.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, header.ClientRectangle);
+        header.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(14, 0, 14, 0),
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            Font = AppTheme.FontBodyBold,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Text = "Visor de Pesaje RS-232 — Lectura Directa, Trama ASCII y Simulación"
+        });
+        Controls.Add(header);
+
+        _previewLcd.Location = new Point(18, 56);
         _previewLcd.Size = new Size(340, 82);
         Controls.Add(_previewLcd);
 
-        _txtParsed.Location = new Point(372, 16);
-        _txtParsed.Width = 258;
-        _txtParsed.BackColor = Color.Black;
+        _txtParsed.Location = new Point(372, 56);
+        _txtParsed.Width = 288;
+        _txtParsed.BackColor = AppTheme.LcdBackground;
         _txtParsed.ForeColor = AppTheme.LcdDigitOn;
         _txtParsed.Font = new Font("Consolas", 11f, FontStyle.Bold);
         _txtParsed.ReadOnly = true;
 
-        _txtRaw.Location = new Point(372, 48);
-        _txtRaw.Size = new Size(258, 180);
+        _txtRaw.Location = new Point(372, 88);
+        _txtRaw.Size = new Size(288, 178);
         _txtRaw.Multiline = true;
-        _txtRaw.BackColor = Color.Black;
+        _txtRaw.ScrollBars = ScrollBars.Vertical;
+        _txtRaw.BackColor = AppTheme.LcdBackground;
         _txtRaw.ForeColor = Color.LightGreen;
         _txtRaw.Font = new Font("Consolas", 8.75f);
         _txtRaw.ReadOnly = true;
         Controls.AddRange([_txtParsed, _txtRaw]);
 
-        var grpSerial = new GroupBox { Text = "Configuración Puerto Serial", Location = new Point(18, 110), Size = new Size(340, 210), Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
+        var grpSerial = new GroupBox { Text = "Configuración Puerto Serial", Location = new Point(18, 150), Size = new Size(340, 232), Font = AppTheme.FontBodyBold, ForeColor = AppTheme.NavyDark };
         _cmbCom.DropDownStyle = ComboBoxStyle.DropDownList;
-        _cmbCom.Items.AddRange(["COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8"]);
+        var ports = new List<string>(Enumerable.Range(1, 16).Select(i => $"COM{i}"));
+        foreach (string detected in ScaleReaderService.GetAvailablePorts())
+        {
+            if (!ports.Contains(detected, StringComparer.OrdinalIgnoreCase))
+            {
+                ports.Add(detected);
+            }
+        }
+        _cmbCom.Items.AddRange([.. ports]);
         _cmbBaud.DropDownStyle = ComboBoxStyle.DropDownList;
-        _cmbBaud.Items.AddRange(["9600", "4800", "2400", "1200"]);
+        _cmbBaud.Items.AddRange(["9600", "4800", "2400", "1200", "19200", "38400", "115200"]);
         _cmbDataBits.DropDownStyle = ComboBoxStyle.DropDownList;
         _cmbDataBits.Items.AddRange(["7", "8"]);
         _cmbParity.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -80,42 +104,74 @@ public sealed class VisorSetupForm : Form
         AddPair(grpSerial, "Velocidad", _cmbBaud, 60);
         AddPair(grpSerial, "Largo Bits", _cmbDataBits, 92);
         AddPair(grpSerial, "Paridad", _cmbParity, 124);
+        _cmbCom.SelectedIndex = 0; _cmbBaud.SelectedIndex = 0; _cmbDataBits.SelectedIndex = 1; _cmbParity.SelectedIndex = 0;
 
-        var btnOpen = new Button { Location = new Point(14, 164), Size = new Size(102, 30) };
-        AppTheme.StyleSecondaryButton(btnOpen, AppIcon.SerialPort, "Abrir", "Abrir puerto serial físico", AppTheme.NavyPrimary);
+        var btnOpen = new Button { Location = new Point(12, 160), Size = new Size(100, 30) };
+        AppTheme.StylePrimaryButton(btnOpen, AppIcon.SerialPort, "Abrir", "Abrir puerto serial físico del visor");
         btnOpen.Click += async (_, _) => await TestOpenSerialAsync();
 
-        var btnSim = new Button { Location = new Point(122, 164), Size = new Size(102, 30) };
-        AppTheme.StyleSecondaryButton(btnSim, AppIcon.Refresh, "Simular", "Activar peso simulado", AppTheme.AccentEmerald);
+        var btnCloseCom = new Button { Location = new Point(118, 160), Size = new Size(100, 30) };
+        AppTheme.StyleSecondaryButton(btnCloseCom, AppIcon.Cancel, "Cerrar", "Cerrar puerto serial activo", AppTheme.AccentDanger);
+        btnCloseCom.Click += (_, _) =>
+        {
+            _services.Scale.Close();
+            _txtRaw.AppendText("[COM] Puerto serial cerrado." + Environment.NewLine);
+        };
+
+        var btnSim = new Button { Location = new Point(224, 160), Size = new Size(104, 30) };
+        AppTheme.StyleSecondaryButton(btnSim, AppIcon.Refresh, "Simular", "Emitir lectura simulada al visor", AppTheme.AccentEmerald);
         btnSim.Click += (_, _) => _services.Scale.EmitSimulatedWeight(18450, true);
 
-        var btnDefaults = new Button { Location = new Point(230, 164), Size = new Size(96, 30) };
+        var btnTestFrame = new Button { Location = new Point(12, 196), Size = new Size(156, 28) };
+        AppTheme.StyleSecondaryButton(btnTestFrame, AppIcon.Scale, "Probar Trama STX", "Inyectar trama ASCII de prueba según configuración STX/Pos/Len", AppTheme.NavyPrimary);
+        btnTestFrame.Click += (_, _) =>
+        {
+            _services.Scale.UpdateConfig(BuildTempConfig());
+            string sample = "\x02+ 18450 kg\r\n";
+            _services.Scale.FeedRawAsciiTestFrame(sample);
+        };
+
+        var btnDefaults = new Button { Location = new Point(176, 196), Size = new Size(152, 28) };
         AppTheme.StyleSecondaryButton(btnDefaults, AppIcon.Settings, "Defecto", "Restaurar valores por defecto");
         btnDefaults.Click += (_, _) =>
         {
             _cmbCom.SelectedIndex = 0; _cmbBaud.SelectedIndex = 0; _cmbDataBits.SelectedIndex = 1; _cmbParity.SelectedIndex = 0;
             _numStx.Value = 2; _numLen.Value = 5; _numPos.Value = 3; _numLimit.Value = 1; _numDelta.Value = 10;
         };
-        grpSerial.Controls.AddRange([btnOpen, btnSim, btnDefaults]);
+        grpSerial.Controls.AddRange([btnOpen, btnCloseCom, btnSim, btnTestFrame, btnDefaults]);
         Controls.Add(grpSerial);
 
-        var grpDatos = new GroupBox { Text = "Trama de Datos", Location = new Point(372, 236), Size = new Size(258, 148), Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
-        AddPairNum(grpDatos, "STX (ASCII)", _numStx, 0, 255, 24);
-        AddPairNum(grpDatos, "Posición Dato", _numPos, 1, 50, 52);
-        AddPairNum(grpDatos, "Largo Dato", _numLen, 1, 15, 80);
-        AddPairNum(grpDatos, "Muestras Estab.", _numLimit, 1, 50, 108);
+        var grpDatos = new GroupBox { Text = "Trama de Datos (0 = línea CR/LF sin STX)", Location = new Point(372, 274), Size = new Size(288, 160), Font = AppTheme.FontBodyBold, ForeColor = AppTheme.NavyDark };
+        AddPairNum(grpDatos, "STX (ASCII)", _numStx, 0, 255, 26);
+        AddPairNum(grpDatos, "Posición Dato", _numPos, 1, 50, 56);
+        AddPairNum(grpDatos, "Largo Dato", _numLen, 1, 15, 86);
+        AddPairNum(grpDatos, "Muestras Estab.", _numLimit, 1, 50, 116);
+        _numStx.Value = 2; _numPos.Value = 3; _numLen.Value = 5; _numLimit.Value = 1;
         Controls.Add(grpDatos);
 
-        var btnSave = new Button { Location = new Point(372, 394), Size = new Size(128, 34) };
-        AppTheme.StylePrimaryButton(btnSave, AppIcon.Save, "Guardar", "Guardar configuración de visor");
+        var btnSave = new Button { Location = new Point(362, 448), Size = new Size(168, 36) };
+        AppTheme.StylePrimaryButton(btnSave, AppIcon.Save, "Guardar y Aplicar", "Guardar y aplicar configuración de visor");
         btnSave.Click += async (_, _) => await SaveAsync();
 
-        var btnClose = new Button { Location = new Point(510, 394), Size = new Size(120, 34) };
+        var btnClose = new Button { Location = new Point(538, 448), Size = new Size(122, 36) };
         AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar ventana");
         btnClose.Click += (_, _) => Close();
 
         Controls.AddRange([btnSave, btnClose]);
+        _previewLcd.UpdateReading(_services.Scale.CurrentWeightKg, true, _services.Scale.CurrentWeightKg == 0, false, false, false, _services.Scale.IsSimulationActive);
+        _txtParsed.Text = $"Peso actual: {_services.Scale.CurrentWeightKg:N0} kg";
         _services.Scale.ReadingReceived += OnReading;
+    }
+
+    private ConfiguracionSistema BuildTempConfig()
+    {
+        ConfiguracionSistema cfg = _services.ConfigActual;
+        cfg.VisorStx = (int)_numStx.Value;
+        cfg.VisorPosData = (int)_numPos.Value;
+        cfg.VisorLenData = (int)_numLen.Value;
+        cfg.VLimit = (int)_numLimit.Value;
+        cfg.VDelta = (int)_numDelta.Value;
+        return cfg;
     }
 
     private static void AddPair(GroupBox grp, string label, ComboBox cmb, int y)

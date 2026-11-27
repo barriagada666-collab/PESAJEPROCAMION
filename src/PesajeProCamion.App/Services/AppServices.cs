@@ -55,6 +55,18 @@ public sealed class AppServices : IDisposable
         Scale.UpdateConfig(ConfigActual);
     }
 
+    public async Task RefreshMetadataSafeAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            await RefreshMetadataAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Domain.Diagnostics.AppLogger.Warn("AppServices", $"Metadata parcial no cargada: {ex.Message}");
+        }
+    }
+
     public async Task InitializeScaleConnectionAsync(CancellationToken ct = default)
     {
         ConfigActual = await Catalogs.GetConfigAsync(ct).ConfigureAwait(false);

@@ -1,0 +1,199 @@
+using System.Diagnostics;
+using System.Drawing;
+using System.Globalization;
+using System.Windows.Forms;
+using PesajeProCamion.App.UI.Theme;
+using PesajeProCamion.Domain.Diagnostics;
+
+namespace PesajeProCamion.App.UI.Dialogs;
+
+/// <summary>Visor diagnóstico de errores, eventos SQL, visor serial y auditoría de conexión en tiempo real.</summary>
+public sealed class ErrorLogViewerDialog : Form
+{
+    private readonly ToolTip _tt = new();
+    private readonly ComboBox _cmbLevel = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly TextBox _txtFilter = new();
+    private readonly DataGridView _grid = new();
+    private readonly TextBox _txtDetail = new();
+
+    public ErrorLogViewerDialog()
+    {
+        Text = "Visor de Logs y Diagnóstico de Errores";
+        ClientSize = new Size(880, 560);
+        MinimumSize = new Size(760, 460);
+        StartPosition = FormStartPosition.CenterParent;
+        BackColor = AppTheme.BackgroundLight;
+        AppTheme.ApplyFormIcon(this);
+        BuildUi();
+        Load += (_, _) => ReloadGrid();
+        AppLogger.EntryLogged += OnLiveEntry;
+        FormClosed += (_, _) => AppLogger.EntryLogged -= OnLiveEntry;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _tt.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
+    private void BuildUi()
+    {
+        var header = new Panel { Dock = DockStyle.Top, Height = 54 };
+        header.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, header.ClientRectangle);
+        var lblHead = new Label
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(16, 0, 16, 0),
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            Font = AppTheme.FontTitle,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Text = "Registro y Diagnóstico de Errores del Sistema"
+        };
+        header.Controls.Add(lblHead);
+
+        var filterBar = new Panel { Dock = DockStyle.Top, Height = 50, BackColor = AppTheme.SurfaceCard };
+        _cmbLevel.Items.AddRange(["Todos", "Error", "Warn", "Sql", "Serial", "Info"]);
+        _cmbLevel.SelectedIndex = 0;
+        _cmbLevel.SelectedIndexChanged += (_, _) => ReloadGrid();
+
+        filterBar.Controls.Add(new Label { Text = "Nivel:", Location = new Point(14, 16), AutoSize = true, Font = AppTheme.FontBodyBold });
+        _cmbLevel.SetBounds(62, 12, 114, 24);
+        filterBar.Controls.Add(new Label { Text = "Filtro:", Location = new Point(188, 16), AutoSize = true, Font = AppTheme.FontBodyBold });
+        _txtFilter.SetBounds(234, 12, 220, 24);
+        _txtFilter.TextChanged += (_, _) => ReloadGrid();
+
+        var btnRefresh = new Button { Location = new Point(464, 9), Size = new Size(112, 32) };
+        AppTheme.StyleSecondaryButton(btnRefresh, AppIcon.Refresh, "Actualizar", "Recargar registros", null, _tt);
+        btnRefresh.Click += (_, _) => ReloadGrid();
+
+        var btnExport = new Button { Location = new Point(584, 9), Size = new Size(146, 32) };
+        AppTheme.StylePrimaryButton(btnExport, AppIcon.Save, "Exportar .LOG", "Guardar registros en archivo", _tt);
+        btnExport.Click += (_, _) => ExportLogs();
+
+        var btnClear = new Button { Location = new Point(738, 9), Size = new Size(118, 32) };
+        AppTheme.StyleDangerButton(btnClear, AppIcon.Delete, "Limpiar", "Limpiar vista en memoria", _tt);
+        btnClear.Click += (_, _) => { AppLogger.ClearMemory(); ReloadGrid(); };
+
+        filterBar.Controls.AddRange([_cmbLevel, _txtFilter, btnRefresh, btnExport, btnClear]);
+
+        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 260, BackColor = AppTheme.BorderSubtle };
+        AppTheme.StyleDataGrid(_grid);
+        _grid.Dock = DockStyle.Fill;
+        _grid.Columns.AddRange([
+            new DataGridViewTextBoxColumn { HeaderText = "Fecha / Hora", FillWeight = 95 },
+            new DataGridViewTextBoxColumn { HeaderText = "Nivel", FillWeight = 55 },
+            new DataGridViewTextBoxColumn { HeaderText = "Módulo", FillWeight = 75 },
+            new DataGridViewTextBoxColumn { HeaderText = "Mensaje", FillWeight = 320 }
+        ]);
+        _grid.SelectionChanged += (_, _) => ShowSelectedDetail();
+        split.Panel1.Controls.Add(_grid);
+
+        var detailPanel = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.SurfaceCard, Padding = new Padding(8) };
+        _txtDetail.Dock = DockStyle.Fill;
+        _txtDetail.Multiline = true;
+        _txtDetail.ReadOnly = true;
+        _txtDetail.ScrollBars = ScrollBars.Both;
+        _txtDetail.BackColor = AppTheme.LcdBackground;
+        _txtDetail.ForeColor = Color.Gainsboro;
+        _txtDetail.Font = AppTheme.FontMono;
+        detailPanel.Controls.Add(_txtDetail);
+        split.Panel2.Controls.Add(detailPanel);
+
+        var footer = new Panel { Dock = DockStyle.Bottom, Height = 44, BackColor = AppTheme.SurfaceCard };
+        var lblFile = new Label
+        {
+            Location = new Point(14, 12),
+            Size = new Size(560, 22),
+            AutoEllipsis = true,
+            ForeColor = AppTheme.TextMuted,
+            Font = new Font("Segoe UI", 8.5f),
+            Text = $"Archivo actual: {AppLogger.CurrentLogFilePath}"
+        };
+        var btnFolder = new Button { Location = new Point(590, 6), Size = new Size(142, 32) };
+        AppTheme.StyleSecondaryButton(btnFolder, AppIcon.Search, "Abrir Carpeta", "Abrir carpeta de logs en Explorador", null, _tt);
+        btnFolder.Click += (_, _) =>
+        {
+            Directory.CreateDirectory(AppLogger.LogDirectory);
+            Process.Start(new ProcessStartInfo("explorer.exe", AppLogger.LogDirectory) { UseShellExecute = true });
+        };
+
+        var btnClose = new Button { Location = new Point(740, 6), Size = new Size(116, 32) };
+        AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar ventana", null, _tt);
+        btnClose.Click += (_, _) => Close();
+        footer.Controls.AddRange([lblFile, btnFolder, btnClose]);
+
+        Controls.AddRange([split, footer, filterBar, header]);
+    }
+
+    private void OnLiveEntry(object? sender, AppLogEntry entry)
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        BeginInvoke(ReloadGrid);
+    }
+
+    private void ReloadGrid()
+    {
+        IReadOnlyList<AppLogEntry> all = AppLogger.GetEntries();
+        string levelSel = _cmbLevel.SelectedItem?.ToString() ?? "Todos";
+        string filter = _txtFilter.Text.Trim();
+
+        _grid.Rows.Clear();
+        foreach (AppLogEntry e in all)
+        {
+            if (!string.Equals(levelSel, "Todos", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(e.Level.ToString(), levelSel, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            if (!string.IsNullOrEmpty(filter) &&
+                !e.Source.Contains(filter, StringComparison.OrdinalIgnoreCase) &&
+                !e.Message.Contains(filter, StringComparison.OrdinalIgnoreCase) &&
+                !(e.Detail?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false))
+            {
+                continue;
+            }
+
+            int idx = _grid.Rows.Add(
+                e.Timestamp.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                e.Level.ToString().ToUpperInvariant(),
+                e.Source,
+                e.Message);
+            _grid.Rows[idx].Tag = e;
+            _grid.Rows[idx].DefaultCellStyle.ForeColor = e.Level switch
+            {
+                AppLogLevel.Error => AppTheme.AccentDanger,
+                AppLogLevel.Warn => AppTheme.AccentAmber,
+                _ => AppTheme.TextPrimary
+            };
+        }
+        ShowSelectedDetail();
+    }
+
+    private void ShowSelectedDetail()
+    {
+        if (_grid.CurrentRow?.Tag is AppLogEntry e)
+        {
+            _txtDetail.Text = $"[{e.Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{e.Level}] [{e.Source}]\r\n{e.Message}\r\n\r\n{e.Detail}";
+        }
+        else
+        {
+            _txtDetail.Text = "Seleccione una fila para ver la traza detallada del evento.";
+        }
+    }
+
+    private void ExportLogs()
+    {
+        using var sfd = new SaveFileDialog
+        {
+            Filter = "Archivo de Log|*.log;*.txt",
+            FileName = $"PesajeProCamion_Diagnostico_{DateTime.Now:yyyyMMdd_HHmm}.log"
+        };
+        if (sfd.ShowDialog(this) != DialogResult.OK) return;
+        AppLogger.ExportToFile(sfd.FileName);
+        MessageBox.Show(this, $"Logs exportados correctamente:\r\n{sfd.FileName}", "Diagnóstico", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+}
