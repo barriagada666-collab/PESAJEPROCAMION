@@ -1,0 +1,32 @@
+# Build outputs
+bin/
+obj/
+out/
+publish/
+TestResults/
+*.user
+*.suo
+*.cache
+.vs/
+.vscode/
+
+# Legacy binaries and large runtime databases
+WeighMaster.exe
+WMGestion.exe
+placillaPRUEBA/
+Data/
+*.fdb
+*.FDB
+*.gdb
+*.GDB
+*.bak
+*.fbk
+
+# Installer outputs and logs
+installer/Output/
+*.log
+*.tmp
+
+# Secrets / local environment overrides
+*.local.json
+appsettings.Local.json
