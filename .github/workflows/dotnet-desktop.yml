@@ -32,12 +32,12 @@ jobs:
     - name: Build solution (${{ matrix.configuration }})
       run: dotnet build PesajeProCamion.sln --configuration ${{ matrix.configuration }} --no-restore
 
-    - name: Run automated tests (excluding proprietary local GDB fixture tests)
+    - name: Run automated portable, unit, stress, and UI tests (excluding local Firebird/GDB server fixture tests)
       run: >
         dotnet test PesajeProCamion.sln
         --configuration ${{ matrix.configuration }}
         --no-build
-        --filter "FullyQualifiedName!~Ods9BinaryReader_ReadsAllTablesFromRealLegacyDatabase&FullyQualifiedName!~Ods9Migrator_MigratesAndCleansAllDataIntoRealFirebird25"
+        --filter "FullyQualifiedName!~Ods9BinaryReader_ReadsAllTablesFromRealLegacyDatabase&FullyQualifiedName!~Ods9Migrator_MigratesAndCleansAllDataIntoRealFirebird25&FullyQualifiedName!~FirebirdMigratedDatabase_ConcurrentQueriesAndBatchInserts_StayFastAndLeakFree&FullyQualifiedName!~EndToEnd_CommercialAndMopWeighing_And_RegressionBugs_WorkCleanly"
 
     - name: Publish portable self-contained win-x64 (Release)
       if: matrix.configuration == 'Release'
