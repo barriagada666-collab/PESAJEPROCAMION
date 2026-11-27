@@ -295,6 +295,7 @@ public sealed class WorkflowAndRegressionTests
     }
 
     [Fact]
+    [Trait("Requires", "LocalFixture")]
     public async Task RemoteLegacySchema_Login_Logs_TransitoAnul_Split_WorkWithoutColumnErrors()
     {
         // Replica exactamente las restricciones del servidor remoto ODS 9:
