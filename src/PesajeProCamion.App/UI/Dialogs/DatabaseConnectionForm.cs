@@ -488,10 +488,10 @@ public sealed class DatabaseConnectionForm : Form
         }
         catch (Exception ex)
         {
-            AppLogger.Error("DBConfig", "Error inicializando base de datos limpia.", ex);
+            string corrId = AppLogger.ErrorCorrelated("DBConfig", "Error inicializando base de datos limpia.", ex);
             _lblConnBanner.BackColor = AppTheme.AccentDanger;
-            _lblConnBanner.Text = $"Error creando base de datos: {ex.Message}";
-            _txtLog.Text = ex.ToString();
+            _lblConnBanner.Text = $"Error creando base de datos ({corrId}): {AppLogger.SanitizeText(ex.Message)}";
+            _txtLog.Text = $"Ref: {corrId}\r\n{AppLogger.SanitizeText(ex.ToString())}";
         }
     }
 
@@ -537,10 +537,10 @@ public sealed class DatabaseConnectionForm : Form
         }
         catch (Exception ex)
         {
-            AppLogger.Error("Migrator", "Error durante migración ODS 9.1.", ex);
+            string corrId = AppLogger.ErrorCorrelated("Migrator", "Error durante migración ODS 9.1.", ex);
             _lblConnBanner.BackColor = AppTheme.AccentDanger;
-            _lblConnBanner.Text = $"ERROR EN MIGRACIÓN: {ex.Message}";
-            _txtLog.Text += ex.ToString();
+            _lblConnBanner.Text = $"ERROR EN MIGRACIÓN ({corrId}): {AppLogger.SanitizeText(ex.Message)}";
+            _txtLog.Text += $"Ref: {corrId}\r\n{AppLogger.SanitizeText(ex.ToString())}";
         }
         finally
         {

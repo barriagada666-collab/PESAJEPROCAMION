@@ -44,6 +44,15 @@ public sealed class DatabaseSessionFactory
 
     public DatabaseSettings Settings => _settings;
 
+    public FbCommand CreateCommand(string sql, FbConnection conn, FbTransaction? tx = null)
+    {
+        ArgumentNullException.ThrowIfNull(conn);
+        return new FbCommand(sql, conn, tx)
+        {
+            CommandTimeout = _settings.EffectiveCommandTimeout
+        };
+    }
+
     public static void InvalidateCapabilitiesCache() => CapabilitiesCache.Clear();
 
     public async Task<FbConnection> OpenConnectionAsync(CancellationToken ct = default)
@@ -127,7 +136,14 @@ public sealed class DatabaseSessionFactory
         }
         catch (Exception ex)
         {
-            await tx.RollbackAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception rbEx)
+            {
+                AppLogger.Warn("SQL", $"No se pudo revertir la transacción Firebird: {rbEx.Message}");
+            }
             AppLogger.Error("SQL", "Transacción revertida por error de base de datos.", ex);
             throw;
         }
@@ -146,7 +162,14 @@ public sealed class DatabaseSessionFactory
         }
         catch (Exception ex)
         {
-            await tx.RollbackAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception rbEx)
+            {
+                AppLogger.Warn("SQL", $"No se pudo revertir la transacción Firebird: {rbEx.Message}");
+            }
             AppLogger.Error("SQL", "Transacción revertida por error de base de datos.", ex);
             throw;
         }

@@ -6,11 +6,11 @@
 - Acceso TCP al puerto `3050` del servidor **Firebird / InterBase** (local `localhost` o equipo en red LAN como `192.168.2.56`).
 
 ## 2. Despliegue por Instalador o Modo Portable
-- **Instalador Windows (`PesajeProCamion_Setup_v2.3.0.exe`)**:
+- **Instalador Windows (`PesajeProCamion_Setup_v2.4.0.exe`)**:
   ```powershell
-  PesajeProCamion_Setup_v2.3.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+  PesajeProCamion_Setup_v2.4.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
   ```
-- **Versión Portable (`PesajeProCamion_Portable_v2.3.0_win-x64.zip`)**: descomprimir y ejecutar `PesajeProCamion.App.exe` directamente desde USB o carpeta de red local. Con `portable.flag` o `appsettings.json` junto al ejecutable, preferencias de campos de ticket, conexión BD y logs permanecen portables junto al binario.
+- **Versión Portable (`PesajeProCamion_Portable_v2.4.0_win-x64.zip`)**: descomprimir y ejecutar `PesajeProCamion.App.exe` directamente desde USB o carpeta de red local. Con `portable.flag` o `appsettings.json` junto al ejecutable, preferencias de campos de ticket, conexión BD y logs permanecen portables junto al binario.
 
 ## 3. Credenciales Administrativas e Inicio de Sesión
 - Al inicializar una base nueva o migrar un respaldo legacy ODS 9.1, se crea y habilita la cuenta administradora **`barriagada`** (clave **`Cambias0`**) respetando automáticamente el límite `PASS_WORD VARCHAR(10)` en servidores Firebird heredados.

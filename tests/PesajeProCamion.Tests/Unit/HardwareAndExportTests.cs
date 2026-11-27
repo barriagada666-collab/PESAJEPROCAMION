@@ -11,6 +11,7 @@ using Xunit;
 
 namespace PesajeProCamion.Tests.Unit;
 
+[Collection("SequentialUiAndLogger")]
 public sealed class HardwareAndExportTests
 {
     [Fact]
@@ -284,6 +285,87 @@ public sealed class HardwareAndExportTests
         finally
         {
             Directory.Delete(tmpDir, true);
+        }
+    }
+
+    [Fact]
+    public void AppLogger_RedactsSecrets_DeduplicatesRepeats_RotatesBySize_AndPrunesExpiredLogs()
+    {
+        string tmpDir = Path.Combine(Path.GetTempPath(), $"pesaje_log_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+        long prevMaxSize = AppLogger.MaxFileSizeBytes;
+        int prevRetention = AppLogger.RetentionDays;
+        try
+        {
+            AppLogger.ClearMemory();
+            AppLogger.ConfigureDirectory(tmpDir);
+            AppLogger.RetentionDays = 30;
+            AppLogger.MaxFileSizeBytes = 512;
+
+            // 1. Secret redaction + CorrelationId
+            string corr = AppLogger.Critical(
+                "AuthTest",
+                "Fallo conectando con PWD=supersecret;Password=Cambias0;Token=Bearer tok_abc.123",
+                new InvalidOperationException("PAT ghp_1234567890abcdef no autorizado"));
+            Assert.StartsWith("OP-", corr, StringComparison.Ordinal);
+
+            AppLogEntry top = AppLogger.GetEntries()[0];
+            Assert.Equal(AppLogLevel.Critical, top.Level);
+            Assert.Equal(corr, top.CorrelationId);
+            Assert.DoesNotContain("supersecret", top.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Cambias0", top.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("tok_abc.123", top.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("ghp_1234567890abcdef", top.Detail ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("***REDACTED***", top.Message, StringComparison.Ordinal);
+
+            // 2. Repeated error deduplication window
+            for (int i = 0; i < 4; i++)
+            {
+                AppLogger.ErrorDetail("LoopTest", "Timeout repetido", "Socket error 10060");
+            }
+            AppLogEntry dedup = AppLogger.GetEntries()[0];
+            Assert.Equal("Timeout repetido", dedup.Message);
+            Assert.Equal(4, dedup.RepeatCount);
+
+            // 3. Size-based log rotation
+            for (int i = 0; i < 16; i++)
+            {
+                AppLogger.Debug("RotationTest", $"Mensaje de relleno #{i:D2} para superar el umbral de 512 bytes de rotación segura en disco.");
+            }
+            string activeFile = AppLogger.CurrentLogFilePath;
+            string rotatedFile = Path.Combine(tmpDir, $"pesaje_{DateTime.Today:yyyyMMdd}_001.log");
+            Assert.True(File.Exists(activeFile));
+            Assert.True(File.Exists(rotatedFile));
+
+            // 4. Expired log pruning
+            string oldFile = Path.Combine(tmpDir, "pesaje_20200101.log");
+            File.WriteAllText(oldFile, "old log");
+            File.SetLastWriteTime(oldFile, DateTime.Today.AddDays(-45));
+            int pruned = AppLogger.PruneExpiredLogs(tmpDir);
+            Assert.True(pruned >= 1);
+            Assert.False(File.Exists(oldFile));
+
+            // 5. DatabaseSettings.EffectiveCommandTimeout bounds + DatabaseSessionFactory.CreateCommand
+            var dbSettings = new PesajeProCamion.Data.Configuration.DatabaseSettings { CommandTimeout = 2 };
+            Assert.Equal(5, dbSettings.EffectiveCommandTimeout);
+            dbSettings.CommandTimeout = 999;
+            Assert.Equal(300, dbSettings.EffectiveCommandTimeout);
+            dbSettings.CommandTimeout = 45;
+            var sessionFactory = new PesajeProCamion.Data.Infrastructure.DatabaseSessionFactory(dbSettings);
+            using var fbConn = new FirebirdSql.Data.FirebirdClient.FbConnection(dbSettings.BuildConnectionString());
+            using var cmd = sessionFactory.CreateCommand("SELECT 1 FROM RDB$DATABASE", fbConn);
+            Assert.Equal(45, cmd.CommandTimeout);
+        }
+        finally
+        {
+            AppLogger.MaxFileSizeBytes = prevMaxSize;
+            AppLogger.RetentionDays = prevRetention;
+            AppLogger.ResetDirectory();
+            AppLogger.ClearMemory();
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
         }
     }
 }

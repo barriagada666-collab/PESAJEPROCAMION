@@ -225,7 +225,7 @@ public sealed class GestionPesajesControl : UserControl
         _lblResumen.Height = 30;
         _lblResumen.BackColor = AppTheme.NavyDark;
         _lblResumen.ForeColor = Color.White;
-        _lblResumen.Font = new Font("Segoe UI", 9.25f, FontStyle.Bold);
+        _lblResumen.Font = AppTheme.FontBodyBold;
         _lblResumen.TextAlign = ContentAlignment.MiddleLeft;
         _lblResumen.Padding = new Padding(12, 0, 12, 0);
 
@@ -451,9 +451,6 @@ public sealed class GestionPesajesControl : UserControl
         long sumBruto = 0, sumTara = 0, sumNeto = 0, sumFardos = 0;
         int activos = 0, enProceso = 0;
 
-        using var netoFont = new Font("Segoe UI", 9.75f, FontStyle.Bold);
-        Font gridNetoFont = new("Segoe UI", 9.75f, FontStyle.Bold);
-
         foreach (TicketGridItem item in _rows)
         {
             Pesaje p = item.Pesaje;
@@ -479,7 +476,7 @@ public sealed class GestionPesajesControl : UserControl
             row.Cells[0].Style.Font = AppTheme.FontBodyBold;
             row.Cells[8].Style.Font = AppTheme.FontBodyBold;
             row.Cells[9].Style.Font = AppTheme.FontBodyBold;
-            row.Cells[10].Style.Font = gridNetoFont;
+            row.Cells[10].Style.Font = AppTheme.FontBodyBoldLarge;
 
             if (item.EsEnProceso)
             {

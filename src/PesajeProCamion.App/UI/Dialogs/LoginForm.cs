@@ -301,8 +301,8 @@ public sealed class LoginForm : Form
         }
         catch (Exception ex)
         {
-            AppLogger.Error("Login", "Fallo al cargar usuarios desde Firebird.", ex);
-            _lblStatus.Text = $"Sin conexión a BD: {ex.Message} — Abra 'Servidor BD' o 'Logs de Errores'.";
+            string corrId = AppLogger.ErrorCorrelated("Login", "Fallo al cargar usuarios desde Firebird.", ex);
+            _lblStatus.Text = $"Sin conexión a BD ({corrId}): {AppLogger.SanitizeText(ex.Message)} — Abra 'Servidor BD' o 'Logs de Errores'.";
             _lblStatus.ForeColor = AppTheme.AccentDanger;
             _btnIngresar.Enabled = false;
             _btnIngresar.BackColor = AppTheme.BorderSubtle;
@@ -369,8 +369,8 @@ public sealed class LoginForm : Form
         }
         catch (Exception ex)
         {
-            AppLogger.Error("Login", "Error inesperado durante autenticación.", ex);
-            MessageBox.Show(this, $"Error durante el inicio de sesión:\r\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            string corrId = AppLogger.ErrorCorrelated("Login", "Error inesperado durante autenticación.", ex);
+            MessageBox.Show(this, $"Error durante el inicio de sesión (Ref: {corrId}):\r\n{AppLogger.SanitizeText(ex.Message)}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 

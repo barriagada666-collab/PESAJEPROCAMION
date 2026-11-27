@@ -60,7 +60,7 @@ public sealed class WeighingRepository
     {
         var list = new List<RegistroTransito>();
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = new FbCommand("""
+        await using var cmd = _db.CreateCommand("""
             SELECT T.*, COALESCE(P.DESCRIP, T.PRODUCTO) AS NMPRODUCTO, COALESCE(C.NOMBRE, T.CLIENTE) AS NMCLIENTE
             FROM DBTRANSITO T
             LEFT JOIN DBPRODUCTOS P ON TRIM(P.PRODUCTO) = TRIM(T.PRODUCTO)
@@ -458,7 +458,7 @@ public sealed class WeighingRepository
             WHERE P.FLPESAJE IS NOT NULL
             """;
 
-        using var cmd = new FbCommand { Connection = conn };
+        using var cmd = _db.CreateCommand(string.Empty, conn);
         if (folioExacto.HasValue)
         {
             sql += " AND P.FLPESAJE = @FP";
@@ -1102,7 +1102,7 @@ public sealed class WeighingRepository
             sql += " AND C.TARAREG = '1'";
         }
         sql += " ORDER BY C.FTARA DESC, C.PATENTE";
-        await using var cmd = new FbCommand(sql, conn);
+        await using var cmd = _db.CreateCommand(sql, conn);
         await using FbDataReader r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await r.ReadAsync(ct).ConfigureAwait(false))
         {

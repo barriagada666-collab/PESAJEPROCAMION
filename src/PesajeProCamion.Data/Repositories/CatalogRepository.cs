@@ -182,7 +182,7 @@ public sealed class CatalogRepository
     public async Task<FoliosSistema> GetFoliosAsync(CancellationToken ct = default)
     {
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = new FbCommand("SELECT FIRST 1 * FROM DBFOLIOS", conn);
+        await using var cmd = _db.CreateCommand("SELECT FIRST 1 * FROM DBFOLIOS", conn);
         await using FbDataReader r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await r.ReadAsync(ct).ConfigureAwait(false))
         {
@@ -297,7 +297,7 @@ public sealed class CatalogRepository
     {
         var list = new List<Cliente>();
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = new FbCommand("SELECT RUT, DIGITO, NOMBRE, DIRECCION, GIRO, COMUNA, CIUDAD, TELEFONO, FAX, CASILLA, USUAING, USUAMOD FROM DBCLIENTES ORDER BY NOMBRE, RUT", conn);
+        await using var cmd = _db.CreateCommand("SELECT RUT, DIGITO, NOMBRE, DIRECCION, GIRO, COMUNA, CIUDAD, TELEFONO, FAX, CASILLA, USUAING, USUAMOD FROM DBCLIENTES ORDER BY NOMBRE, RUT", conn);
         await using FbDataReader r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await r.ReadAsync(ct).ConfigureAwait(false))
         {
@@ -560,7 +560,7 @@ public sealed class CatalogRepository
     {
         var list = new List<TipoCarga>();
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = new FbCommand("SELECT TCARGA, DESCRIP, TCNORMAL, USUAING, USUAMOD FROM DBTCARGA ORDER BY TCARGA", conn);
+        await using var cmd = _db.CreateCommand("SELECT TCARGA, DESCRIP, TCNORMAL, USUAING, USUAMOD FROM DBTCARGA ORDER BY TCARGA", conn);
         await using FbDataReader r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await r.ReadAsync(ct).ConfigureAwait(false))
         {

@@ -192,7 +192,7 @@ public sealed class MopRepository
     {
         var list = new List<PesajeMop>();
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = new FbCommand("""
+        await using var cmd = _db.CreateCommand("""
             SELECT * FROM DBMOPPJES
             WHERE FECHA >= @D AND FECHA <= @H
             ORDER BY FECHA DESC, FLMOP DESC
@@ -225,28 +225,43 @@ public sealed class MopRepository
             });
         }
 
-        foreach (PesajeMop mop in list)
+        if (list.Count == 0)
         {
-            await using var dcmd = new FbCommand("SELECT * FROM DBMOPDETPJES WHERE FLMOP = @FM AND BASCULA = @B ORDER BY EJNRO", conn);
-            AddParam(dcmd, "@FM", mop.FolioMop);
-            AddParam(dcmd, "@B", mop.Bascula);
-            await using FbDataReader dr = await dcmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-            while (await dr.ReadAsync(ct).ConfigureAwait(false))
+            return list;
+        }
+
+        var map = list.ToDictionary(m => (m.FolioMop, m.Bascula));
+        await using var dcmd = _db.CreateCommand("""
+            SELECT D.FLMOP, D.BASCULA, D.EJNRO, D.EJTPO, D.EJPES, D.EJLIM, D.TDNRO, D.TDTPO, D.TDPES, D.TDLIM
+            FROM DBMOPDETPJES D
+            INNER JOIN DBMOPPJES P ON P.FLMOP = D.FLMOP AND P.BASCULA = D.BASCULA
+            WHERE P.FECHA >= @D AND P.FECHA <= @H
+            ORDER BY D.FLMOP DESC, D.BASCULA, D.EJNRO
+            """, conn);
+        AddParam(dcmd, "@D", desde.Date);
+        AddParam(dcmd, "@H", hasta.Date);
+        await using FbDataReader dr = await dcmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await dr.ReadAsync(ct).ConfigureAwait(false))
+        {
+            int flMop = GetInt(dr, "FLMOP");
+            short basc = GetShort(dr, "BASCULA", 1);
+            if (!map.TryGetValue((flMop, basc), out PesajeMop? parent))
             {
-                mop.Detalles.Add(new PesajeMopDetalle
-                {
-                    FolioMop = GetInt(dr, "FLMOP"),
-                    Bascula = GetShort(dr, "BASCULA", 1),
-                    EjeNumero = GetShort(dr, "EJNRO"),
-                    EjeTipo = GetShort(dr, "EJTPO"),
-                    EjePeso = GetInt(dr, "EJPES"),
-                    EjeLimite = GetInt(dr, "EJLIM"),
-                    TandemNumero = GetShort(dr, "TDNRO"),
-                    TandemTipo = GetShort(dr, "TDTPO"),
-                    TandemPeso = GetInt(dr, "TDPES"),
-                    TandemLimite = GetInt(dr, "TDLIM")
-                });
+                continue;
             }
+            parent.Detalles.Add(new PesajeMopDetalle
+            {
+                FolioMop = flMop,
+                Bascula = basc,
+                EjeNumero = GetShort(dr, "EJNRO"),
+                EjeTipo = GetShort(dr, "EJTPO"),
+                EjePeso = GetInt(dr, "EJPES"),
+                EjeLimite = GetInt(dr, "EJLIM"),
+                TandemNumero = GetShort(dr, "TDNRO"),
+                TandemTipo = GetShort(dr, "TDTPO"),
+                TandemPeso = GetInt(dr, "TDPES"),
+                TandemLimite = GetInt(dr, "TDLIM")
+            });
         }
         return list;
     }

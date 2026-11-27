@@ -414,9 +414,9 @@ public sealed class ReportsWorkspaceControl : UserControl
         {
             var card = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.SurfaceCard, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(i == 0 ? 0 : 4, 0, i == 4 ? 0 : 4, 0) };
             var strip = new Panel { Dock = DockStyle.Top, Height = 4, BackColor = kpiAccents[i] };
-            var lblT = new Label { Dock = DockStyle.Top, Height = 18, Padding = new Padding(8, 2, 6, 0), Text = kpiTitles[i], ForeColor = AppTheme.TextMuted, Font = new Font("Segoe UI", 7.75f, FontStyle.Bold) };
-            _kpiValues[i] = new Label { Dock = DockStyle.Top, Height = 26, Padding = new Padding(8, 0, 6, 0), Text = "-", ForeColor = AppTheme.NavyDark, Font = new Font("Segoe UI", 12f, FontStyle.Bold), AutoEllipsis = true };
-            _kpiSubs[i] = new Label { Dock = DockStyle.Fill, Padding = new Padding(8, 0, 6, 2), Text = "-", ForeColor = AppTheme.TextMuted, Font = new Font("Segoe UI", 7.75f), AutoEllipsis = true };
+            var lblT = new Label { Dock = DockStyle.Top, Height = 18, Padding = new Padding(8, 2, 6, 0), Text = kpiTitles[i], ForeColor = AppTheme.TextMuted, Font = AppTheme.FontKpiTitle };
+            _kpiValues[i] = new Label { Dock = DockStyle.Top, Height = 26, Padding = new Padding(8, 0, 6, 0), Text = "-", ForeColor = AppTheme.NavyDark, Font = AppTheme.FontKpiValue, AutoEllipsis = true };
+            _kpiSubs[i] = new Label { Dock = DockStyle.Fill, Padding = new Padding(8, 0, 6, 2), Text = "-", ForeColor = AppTheme.TextMuted, Font = AppTheme.FontKpiSub, AutoEllipsis = true };
             card.Controls.AddRange([_kpiSubs[i], _kpiValues[i], lblT, strip]);
             kpiLayout.Controls.Add(card, i, 0);
         }
@@ -456,7 +456,7 @@ public sealed class ReportsWorkspaceControl : UserControl
         _lblTotals.Height = 30;
         _lblTotals.BackColor = AppTheme.NavyDark;
         _lblTotals.ForeColor = Color.White;
-        _lblTotals.Font = new Font("Segoe UI", 9.25f, FontStyle.Bold);
+        _lblTotals.Font = AppTheme.FontBodyBold;
         _lblTotals.TextAlign = ContentAlignment.MiddleLeft;
         _lblTotals.Padding = new Padding(12, 0, 12, 0);
 
@@ -466,7 +466,7 @@ public sealed class ReportsWorkspaceControl : UserControl
     private DataGridView? _detalleBiGrid;
 
     private static Label MakeFilterLbl(string text)
-        => new() { Text = text, AutoSize = true, Margin = new Padding(6, 7, 2, 0), Font = new Font("Segoe UI", 8.75f, FontStyle.Bold) };
+        => new() { Text = text, AutoSize = true, Margin = new Padding(6, 7, 2, 0), Font = AppTheme.FontSmallBold };
 
     private Button MakeQuickRangeBtn(string text, Action onClick)
     {
@@ -954,7 +954,6 @@ public sealed class ReportsWorkspaceControl : UserControl
         _kpiValues[4].Text = k.TopPatente;
         _kpiSubs[4].Text = $"Cli: {k.TopCliente}";
 
-        Font gridNetoFont = new("Segoe UI", 9.75f, FontStyle.Bold);
         if (_detalleBiGrid is not null)
         {
             _detalleBiGrid.Rows.Clear();
@@ -978,16 +977,16 @@ public sealed class ReportsWorkspaceControl : UserControl
                 row.Cells[0].Style.Font = AppTheme.FontBodyBold;
                 row.Cells[8].Style.Font = AppTheme.FontBodyBold;
                 row.Cells[9].Style.Font = AppTheme.FontBodyBold;
-                row.Cells[10].Style.Font = gridNetoFont;
+                row.Cells[10].Style.Font = AppTheme.FontBodyBoldLarge;
                 if (p.Anulado) row.DefaultCellStyle.ForeColor = AppTheme.AccentDanger;
                 else row.Cells[10].Style.ForeColor = AppTheme.NavyDark;
             }
         }
 
-        FillSegmentGrid(_gridCliente, res.PorCliente, gridNetoFont);
-        FillSegmentGrid(_gridProveedor, res.PorProveedorOrigen, gridNetoFont);
-        FillSegmentGrid(_gridProducto, res.PorProducto, gridNetoFont);
-        FillSegmentGrid(_gridPatente, res.PorPatente, gridNetoFont);
+        FillSegmentGrid(_gridCliente, res.PorCliente, AppTheme.FontBodyBoldLarge);
+        FillSegmentGrid(_gridProveedor, res.PorProveedorOrigen, AppTheme.FontBodyBoldLarge);
+        FillSegmentGrid(_gridProducto, res.PorProducto, AppTheme.FontBodyBoldLarge);
+        FillSegmentGrid(_gridPatente, res.PorPatente, AppTheme.FontBodyBoldLarge);
         ApplyFardosColumnsVisibility();
         _chartCanvas.Invalidate();
 
@@ -1107,10 +1106,9 @@ public sealed class ReportsWorkspaceControl : UserControl
         g.DrawRectangle(borderPen, bounds);
         using var titleBrush = new SolidBrush(AppTheme.NavyDark);
         using var barBrush = new SolidBrush(barColor);
-        using var lblFont = new Font("Segoe UI", 8.5f, FontStyle.Bold);
         using var txtBrush = new SolidBrush(AppTheme.TextPrimary);
 
-        g.DrawString(title, new Font("Segoe UI", 10f, FontStyle.Bold), titleBrush, bounds.X + 12, bounds.Y + 10);
+        g.DrawString(title, AppTheme.FontChartTitle, titleBrush, bounds.X + 12, bounds.Y + 10);
         if (items.Count == 0)
         {
             g.DrawString("Sin datos para el segmento actual.", AppTheme.FontBody, Brushes.Gray, bounds.X + 12, bounds.Y + 42);
@@ -1128,11 +1126,11 @@ public sealed class ReportsWorkspaceControl : UserControl
             SegmentSummaryRow item = items[i];
             int y = topY + i * rowH;
             string name = item.Nombre.Length > 22 ? item.Nombre[..20] + ".." : item.Nombre;
-            g.DrawString(name, lblFont, txtBrush, bounds.X + 10, y + 3);
+            g.DrawString(name, AppTheme.FontSmallBold, txtBrush, bounds.X + 10, y + 3);
 
             int bw = (int)Math.Max(4, chartW * (item.ToneladasNetas / maxVal));
             g.FillRectangle(barBrush, bounds.X + labelW, y + 3, bw, Math.Max(12, rowH - 10));
-            g.DrawString($"{item.ToneladasNetas:N1} t ({item.PorcentajeNeto:N0}%)", lblFont, titleBrush, bounds.X + labelW + bw + 6, y + 3);
+            g.DrawString($"{item.ToneladasNetas:N1} t ({item.PorcentajeNeto:N0}%)", AppTheme.FontSmallBold, titleBrush, bounds.X + labelW + bw + 6, y + 3);
         }
     }
 
@@ -1237,7 +1235,6 @@ public sealed class ReportsWorkspaceControl : UserControl
             _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = h, ReadOnly = true });
         }
 
-        Font netoFont = new("Segoe UI", 9.75f, FontStyle.Bold);
         for (int rIdx = 0; rIdx < rows.Count; rIdx++)
         {
             IReadOnlyList<object?> r = rows[rIdx];
@@ -1260,7 +1257,7 @@ public sealed class ReportsWorkspaceControl : UserControl
             foreach (int bc in boldCols) gridRow.Cells[bc].Style.Font = AppTheme.FontBodyBold;
             foreach (int lc in largerCols)
             {
-                gridRow.Cells[lc].Style.Font = netoFont;
+                gridRow.Cells[lc].Style.Font = AppTheme.FontBodyBoldLarge;
                 gridRow.Cells[lc].Style.ForeColor = AppTheme.NavyDark;
             }
         }
