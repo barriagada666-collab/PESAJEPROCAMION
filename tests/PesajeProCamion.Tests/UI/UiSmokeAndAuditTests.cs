@@ -120,6 +120,12 @@ public sealed class UiSmokeAndAuditTests
                             }
                             form.Show();
                             Application.DoEvents();
+                            if (form is TicketViewerDialog tv)
+                            {
+                                tv.Size = new Size(1024, 700);
+                                Application.DoEvents();
+                                AuditControlTree(tv);
+                            }
                         }
                         else
                         {

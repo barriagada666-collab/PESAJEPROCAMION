@@ -161,7 +161,7 @@ public static class AppTheme
         catch (Exception ex)
         {
             Domain.Diagnostics.AppLogger.Error(source, $"Error cargando vista: {ex.Message}", ex);
-            if (!owner.IsDisposed && owner.Visible && !Domain.Diagnostics.AppLogger.IsSilentTestHost)
+            if (!owner.IsDisposed && !owner.Disposing && owner.IsHandleCreated && owner.Visible && !Domain.Diagnostics.AppLogger.IsSilentTestHost)
             {
                 MessageBox.Show(owner, $"No se pudo cargar datos de {source}:\r\n{ex.Message}", source, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }

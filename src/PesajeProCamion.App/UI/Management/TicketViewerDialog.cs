@@ -109,15 +109,18 @@ public sealed class TicketViewerDialog : Form
         var actionsBar = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 52,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             BackColor = AppTheme.SurfaceCard,
             Padding = new Padding(8, 8, 8, 8)
         };
         var actionsRow = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
+            WrapContents = true,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Margin = Padding.Empty,
             Padding = Padding.Empty
         };
@@ -129,35 +132,35 @@ public sealed class TicketViewerDialog : Form
         _numCopias.Value = Math.Clamp(_services.ConfigActual.NroCopiasTicket, 1, 20);
         _numCopias.Margin = new Padding(0, 5, 6, 0);
 
-        var btnPrint = new Button { Size = new Size(126, 34), Margin = new Padding(0, 0, 5, 0) };
+        var btnPrint = new Button { Size = new Size(98, 34), Margin = new Padding(0, 0, 5, 4) };
         AppTheme.StylePrimaryButton(btnPrint, AppIcon.Print, "Imprimir", "Vista previa e impresión con campos visibles configurados", _tt);
         btnPrint.Enabled = PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ImprimirTicket);
         btnPrint.Click += (_, _) => PrintPreviewTicket(_services.TicketFields);
 
-        var btnPdf = new Button { Size = new Size(116, 34), Margin = new Padding(0, 0, 5, 0) };
+        var btnPdf = new Button { Size = new Size(116, 34), Margin = new Padding(0, 0, 5, 4) };
         AppTheme.StyleSecondaryButton(btnPdf, AppIcon.Pdf, "Exportar PDF", "Guardar ticket personalizado en PDF", AppTheme.AccentDanger, _tt);
         btnPdf.Click += (_, _) => ExportTicketPdf(_services.TicketFields);
 
-        var btnXlsx = new Button { Size = new Size(122, 34), Margin = new Padding(0, 0, 5, 0) };
-        AppTheme.StyleSecondaryButton(btnXlsx, AppIcon.ExportExcel, "Exportar Excel", "Guardar ticket estandarizado en Excel (.xlsx)", AppTheme.AccentEmerald, _tt);
+        var btnXlsx = new Button { Size = new Size(96, 34), Margin = new Padding(0, 0, 5, 4) };
+        AppTheme.StyleSecondaryButton(btnXlsx, AppIcon.ExportExcel, "Excel", "Guardar ticket estandarizado en Excel (.xlsx)", AppTheme.AccentEmerald, _tt);
         btnXlsx.Click += (_, _) => ExportTicketXlsx(_services.TicketFields);
 
-        _btnSplit.Size = new Size(114, 34);
-        _btnSplit.Margin = new Padding(0, 0, 5, 0);
+        _btnSplit.Size = new Size(112, 34);
+        _btnSplit.Margin = new Padding(0, 0, 5, 4);
         AppTheme.StyleSecondaryButton(_btnSplit, AppIcon.Split, "Dividir en 2", "Dividir este ticket en 2 folios asignando folio libre al nuevo", AppTheme.AccentEmerald, _tt);
         _btnSplit.Click += async (_, _) => await SplitCurrentTicketAsync();
 
-        _btnModify.Size = new Size(132, 34);
-        _btnModify.Margin = new Padding(0, 0, 5, 0);
-        AppTheme.StyleSecondaryButton(_btnModify, AppIcon.EditTicket, "Editor Completo", "Abrir formulario completo con catálogos", AppTheme.NavyPrimary, _tt);
+        _btnModify.Size = new Size(124, 34);
+        _btnModify.Margin = new Padding(0, 0, 5, 4);
+        AppTheme.StyleSecondaryButton(_btnModify, AppIcon.EditTicket, "Editar Ticket", "Abrir formulario completo con catálogos", AppTheme.NavyPrimary, _tt);
         _btnModify.Enabled = PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ModificarRegistro);
         _btnModify.Click += async (_, _) => await OpenFullEditorAsync();
 
-        var btnCopyRaw = new Button { Size = new Size(112, 34), Margin = new Padding(0, 0, 5, 0) };
+        var btnCopyRaw = new Button { Size = new Size(112, 34), Margin = new Padding(0, 0, 5, 4) };
         AppTheme.StyleSecondaryButton(btnCopyRaw, AppIcon.Copy, "Copiar Texto", "Copiar texto con campos visibles al portapapeles", null, _tt);
         btnCopyRaw.Click += (_, _) => CopyRawText();
 
-        var btnClose = new Button { Size = new Size(88, 34), Margin = Padding.Empty };
+        var btnClose = new Button { Size = new Size(88, 34), Margin = new Padding(0, 0, 0, 4) };
         AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar visualizador", null, _tt);
         btnClose.Click += (_, _) =>
         {
