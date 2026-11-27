@@ -1,7 +1,7 @@
 # Manual Funcional — PesajeProCamion v2.2
 
 ## 1. Arranque, Inicio de Sesión y Servidor de BD Remota
-1. Al iniciar **PesajeProCamion**, se muestra la pantalla corporativa de carga (`v2.2.0`) y luego el **Inicio de Sesión**.
+1. Al iniciar **PesajeProCamion**, se muestra la pantalla corporativa de carga (`v2.2.1`) y luego el **Inicio de Sesión**.
 2. Cuenta administradora principal integrada: **`barriagada`** / **`Cambias0`** (puede escribirse en mayúsculas o minúsculas o seleccionarse del listado).
 3. Presione **Servidor BD** (en Login) o **Configurar Servidor BD...** (en la barra superior) para conectarse a un servidor local o remoto (ej.: `\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`). Use **Probar Conexión**, **Aplicar (Sin Cerrar)** o **Guardar y Conectar**.
 

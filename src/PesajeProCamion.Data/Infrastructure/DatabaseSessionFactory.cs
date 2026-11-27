@@ -16,9 +16,15 @@ public sealed record DatabaseCapabilities(
     bool HasFoliosId,
     bool HasConfigId,
     bool HasDemoIdColumn,
-    int PasswordMaxLength)
+    bool HasLogIngresoId,
+    bool HasTranAnulAuditColumns,
+    bool TranAnulGdespachoIsInteger,
+    int PasswordMaxLength,
+    int ObservacionMaxLength,
+    int ChoferPesajeMaxLength,
+    int UsernameMaxLength)
 {
-    public bool IsLegacySchema => !HasAuditLog || !HasGenPesaje || PasswordMaxLength < 60;
+    public bool IsLegacySchema => !HasAuditLog || !HasGenPesaje || !HasLogIngresoId || PasswordMaxLength < 60;
 }
 
 /// <summary>Fábrica centralizada de conexiones, detección de capacidades (moderna/remota legacy), transacciones y lectura segura.</summary>
@@ -74,7 +80,13 @@ public sealed class DatabaseSessionFactory
         bool hasFoliosId = await ColumnExistsAsync(conn, "DBFOLIOS", "ID", ct).ConfigureAwait(false);
         bool hasConfigId = await ColumnExistsAsync(conn, "DBCONFIG", "ID", ct).ConfigureAwait(false);
         bool hasDemoId = await ColumnExistsAsync(conn, "DEMO1", "ID_MUESTRA", ct).ConfigureAwait(false);
+        bool hasLogId = await ColumnExistsAsync(conn, "DBLOGSINGRESO", "ID_LOG", ct).ConfigureAwait(false);
+        bool hasTranAnulAudit = await ColumnExistsAsync(conn, "DBTRAN_ANUL", "USUAANUL", ct).ConfigureAwait(false);
+        bool tranAnulGdInt = await IsIntegerColumnAsync(conn, "DBTRAN_ANUL", "GDESPACHO", ct).ConfigureAwait(false);
         int pwLen = await GetColumnLengthAsync(conn, "DBUSUARIOS", "PASS_WORD", 10, ct).ConfigureAwait(false);
+        int obsLen = await GetColumnLengthAsync(conn, "DBPESAJES", "OBSERVA1", 50, ct).ConfigureAwait(false);
+        int choferLen = await GetColumnLengthAsync(conn, "DBPESAJES", "CHOFER", 12, ct).ConfigureAwait(false);
+        int userLen = await GetColumnLengthAsync(conn, "DBUSUARIOS", "NOMBRE", 20, ct).ConfigureAwait(false);
 
         return new DatabaseCapabilities(
             HasAuditLog: hasAudit,
@@ -85,7 +97,13 @@ public sealed class DatabaseSessionFactory
             HasFoliosId: hasFoliosId,
             HasConfigId: hasConfigId,
             HasDemoIdColumn: hasDemoId,
-            PasswordMaxLength: pwLen);
+            HasLogIngresoId: hasLogId,
+            HasTranAnulAuditColumns: hasTranAnulAudit,
+            TranAnulGdespachoIsInteger: tranAnulGdInt,
+            PasswordMaxLength: pwLen,
+            ObservacionMaxLength: obsLen,
+            ChoferPesajeMaxLength: choferLen,
+            UsernameMaxLength: userLen);
     }
 
     public async Task ExecuteInTransactionAsync(Func<FbConnection, FbTransaction, Task> action, CancellationToken ct = default)
@@ -143,7 +161,7 @@ public sealed class DatabaseSessionFactory
     private static async Task<int> GetColumnLengthAsync(FbConnection conn, string table, string col, int fallback, CancellationToken ct)
     {
         await using var cmd = new FbCommand("""
-            SELECT FIRST 1 F.RDB$FIELD_LENGTH
+            SELECT FIRST 1 COALESCE(F.RDB$CHARACTER_LENGTH, F.RDB$FIELD_LENGTH)
             FROM RDB$RELATION_FIELDS RF
             JOIN RDB$FIELDS F ON F.RDB$FIELD_NAME = RF.RDB$FIELD_SOURCE
             WHERE TRIM(RF.RDB$RELATION_NAME) = @T AND TRIM(RF.RDB$FIELD_NAME) = @C
@@ -152,6 +170,28 @@ public sealed class DatabaseSessionFactory
         AddParam(cmd, "@C", col);
         object? val = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return val is null or DBNull ? fallback : Convert.ToInt32(val, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<bool> IsIntegerColumnAsync(FbConnection conn, string table, string col, CancellationToken ct)
+    {
+        await using var cmd = new FbCommand("""
+            SELECT FIRST 1 F.RDB$FIELD_TYPE
+            FROM RDB$RELATION_FIELDS RF
+            JOIN RDB$FIELDS F ON F.RDB$FIELD_NAME = RF.RDB$FIELD_SOURCE
+            WHERE TRIM(RF.RDB$RELATION_NAME) = @T AND TRIM(RF.RDB$FIELD_NAME) = @C
+            """, conn);
+        AddParam(cmd, "@T", table);
+        AddParam(cmd, "@C", col);
+        object? val = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        if (val is null or DBNull) return false;
+        int fType = Convert.ToInt32(val, CultureInfo.InvariantCulture);
+        return fType is 7 or 8 or 16; // SMALLINT(7), INTEGER(8), BIGINT(16)
+    }
+
+    public static string FitLength(string? value, int maxLength)
+    {
+        string trimmed = value?.Trim() ?? string.Empty;
+        return maxLength > 0 && trimmed.Length > maxLength ? trimmed[..maxLength] : trimmed;
     }
 
     public static void AddParam(FbCommand cmd, string name, object? value)

@@ -115,7 +115,7 @@ public sealed class SplashForm : Form
             Location = new Point(24, 250),
             Size = new Size(328, 18),
             TextAlign = ContentAlignment.MiddleRight,
-            Text = "Versión 2.2.0 LTS (.NET 10 Zero-Deps)",
+            Text = "Versión 2.2.1 LTS (.NET 10 Zero-Deps)",
             ForeColor = AppTheme.NavyPrimary,
             Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
         };

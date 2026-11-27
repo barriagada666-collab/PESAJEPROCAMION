@@ -293,4 +293,113 @@ public sealed class WorkflowAndRegressionTests
             if (File.Exists(fdbPath)) File.Delete(fdbPath);
         }
     }
+
+    [Fact]
+    public async Task RemoteLegacySchema_Login_Logs_TransitoAnul_Split_WorkWithoutColumnErrors()
+    {
+        // Replica exactamente las restricciones del servidor remoto ODS 9:
+        // Sin ID_LOG en DBLOGSINGRESO, sin columnas de auditoría en DBTRAN_ANUL (+ GDESPACHO INTEGER),
+        // sin DBAUDITLOG, sin GEN_*, PASS_WORD VARCHAR(10), NOMBRE VARCHAR(20), OBSERVA VARCHAR(50), CHOFER VARCHAR(12).
+        string fdbPath = Path.Combine(Path.GetTempPath(), $"wm_legacy_shape_{Guid.NewGuid():N}.fdb");
+        var settings = new DatabaseSettings { DataSource = "localhost", Port = 3050, DatabasePath = fdbPath, Dialect = 3, Charset = "UTF8" };
+        try
+        {
+            await FirebirdSchemaManager.EnsureDatabaseInitializedAsync(settings);
+            await using (var rawConn = new FirebirdSql.Data.FirebirdClient.FbConnection(settings.BuildConnectionString()))
+            {
+                await rawConn.OpenAsync();
+                string[] ddl =
+                [
+                    "DROP TABLE DBAUDITLOG",
+                    "DROP TABLE DBLOGSINGRESO",
+                    "CREATE TABLE DBLOGSINGRESO (USUARIO INTEGER, SISTEMA INTEGER, FECHA DATE, HORA VARCHAR(5), TURNO INTEGER, ACCION INTEGER)",
+                    "DROP TABLE DBTRAN_ANUL",
+                    "CREATE TABLE DBTRAN_ANUL (FLPESAJE INTEGER, PATENTE VARCHAR(8), ACOPLADO VARCHAR(8), PRODUCTO VARCHAR(10), CLIENTE VARCHAR(10), DESTINO VARCHAR(10), GDESPACHO INTEGER, NETOINF INTEGER, FECHAING DATE, HORAING VARCHAR(5), BRUTO INTEGER, TARA INTEGER, TMOP INTEGER, LARGO INTEGER, MAXBRUTO INTEGER, OBSERVA VARCHAR(50), CHOFER VARCHAR(35), TRANSP VARCHAR(10), USUAING SMALLINT)",
+                    "DROP INDEX IDX_DBUSUARIOS_NOMBRE",
+                    "ALTER TABLE DBUSUARIOS DROP PASS_WORD",
+                    "ALTER TABLE DBUSUARIOS ADD PASS_WORD VARCHAR(10)",
+                    "ALTER TABLE DBUSUARIOS DROP NOMBRE",
+                    "ALTER TABLE DBUSUARIOS ADD NOMBRE VARCHAR(20)",
+                    "ALTER TABLE DBPESAJES DROP OBSERVA1",
+                    "ALTER TABLE DBPESAJES ADD OBSERVA1 VARCHAR(50)",
+                    "ALTER TABLE DBPESAJES DROP OBSERVA2",
+                    "ALTER TABLE DBPESAJES ADD OBSERVA2 VARCHAR(50)",
+                    "ALTER TABLE DBPESAJES DROP CHOFER",
+                    "ALTER TABLE DBPESAJES ADD CHOFER VARCHAR(12)",
+                    "ALTER TABLE DBTRANSITO DROP OBSERVA1",
+                    "ALTER TABLE DBTRANSITO ADD OBSERVA1 VARCHAR(50)",
+                    "ALTER TABLE DBTRANSITO DROP CHOFER",
+                    "ALTER TABLE DBTRANSITO ADD CHOFER VARCHAR(12)",
+                    "DELETE FROM DBUSUARIOS"
+                ];
+                foreach (string sql in ddl)
+                {
+                    await using var cmd = new FirebirdSql.Data.FirebirdClient.FbCommand(sql, rawConn);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            }
+            DatabaseSessionFactory.InvalidateCapabilitiesCache();
+
+            // 1. EnsureBarriagadaAdminAsync en BD con PASS_WORD VARCHAR(10) no debe truncar
+            await FirebirdSchemaManager.EnsureBarriagadaAdminAsync(settings);
+
+            var db = new DatabaseSessionFactory(settings);
+            var security = new SecurityRepository(db);
+            var weighing = new WeighingRepository(db);
+
+            // 2. Autenticar barriagada y BORIS-style plain password + insertar DBLOGSINGRESO SIN ID_LOG
+            Usuario? logged = await security.AuthenticateByLoginAsync(null, "barriagada", "Cambias0", 2);
+            Assert.NotNull(logged);
+            List<LogIngreso> logs = await security.GetLogsIngresoAsync(DateTime.Today.AddDays(-1), DateTime.Today.AddDays(1));
+            Assert.NotEmpty(logs);
+
+            // 3. Crear tránsito con strings largos -> FitLength sin truncation + Eliminar hacia DBTRAN_ANUL legacy sin USUAANUL/FECHAANUL
+            int fTr = await weighing.RegistrarIngresoTransitoAsync(new RegistroTransito
+            {
+                Patente = "LEG123",
+                GuiaDespacho = "GD-NO-INT",
+                FechaIngreso = DateTime.Today,
+                HoraIngreso = "13:10",
+                Bruto = 20000,
+                Chofer = "NOMBRE CHOFER DEMASIADO LARGO",
+                Observacion1 = new string('X', 90),
+                UsuarioIngreso = logged.Id
+            });
+            await weighing.EliminarTransitoAsync(fTr, logged.Id, "Prueba anulación legacy");
+            List<RegistroTransitoAnulado> anulados = await weighing.GetTransitoAnuladoAsync(DateTime.Today.AddDays(-1), DateTime.Today.AddDays(1));
+            Assert.Contains(anulados, a => a.FolioPesaje == fTr);
+
+            // 4. Crear y dividir ticket en DB legacy respetando longitudes de OBSERVA1/OBSERVA2 (50)
+            int f1 = await weighing.CreateManualTicketAsync(new Pesaje
+            {
+                Patente = "LEG456",
+                Bruto = 20,
+                Tara = 10,
+                Neto = 10,
+                FechaIngreso = DateTime.Today,
+                HoraIngreso = "13:15",
+                FechaSalida = DateTime.Today,
+                HoraSalida = "13:20",
+                Observacion1 = new string('O', 90)
+            }, crearEnProceso: false, logged.Id, preserveManualNeto: true);
+
+            TicketSplitResult split = await weighing.SplitTicketAsync(new TicketSplitRequest
+            {
+                OriginalFolio = f1,
+                NetoParte1 = 6,
+                NetoParte2 = 4,
+                BrutoParte1 = 16,
+                TaraParte1 = 10,
+                BrutoParte2 = 14,
+                TaraParte2 = 10
+            }, logged.Id);
+            Assert.Equal(6, (await weighing.GetPesajePorFolioAsync(split.OriginalFolio))!.Neto);
+            Assert.Equal(4, (await weighing.GetPesajePorFolioAsync(split.NewFolio))!.Neto);
+        }
+        finally
+        {
+            FirebirdSql.Data.FirebirdClient.FbConnection.ClearAllPools();
+            if (File.Exists(fdbPath)) File.Delete(fdbPath);
+        }
+    }
 }

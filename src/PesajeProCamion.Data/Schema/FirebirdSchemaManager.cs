@@ -1,6 +1,7 @@
 using System.Text;
 using FirebirdSql.Data.FirebirdClient;
 using PesajeProCamion.Data.Configuration;
+using PesajeProCamion.Data.Infrastructure;
 
 namespace PesajeProCamion.Data.Schema;
 
@@ -604,16 +605,21 @@ public static class FirebirdSchemaManager
             return;
         }
 
+        DatabaseCapabilities caps = await DatabaseSessionFactory.DetectCapabilitiesAsync(conn, ct).ConfigureAwait(false);
         await using var nextIdCmd = new FbCommand("SELECT COALESCE(MAX(USUARIO), 0) + 1 FROM DBUSUARIOS", conn);
         short nextId = Convert.ToInt16(await nextIdCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), System.Globalization.CultureInfo.InvariantCulture);
 
-        string adminHash = Domain.Security.PasswordHasher.HashPassword("Cambias0");
+        string pwToStore = caps.PasswordMaxLength >= 80
+            ? Domain.Security.PasswordHasher.HashPassword("Cambias0")
+            : DatabaseSessionFactory.FitLength("CAMBIAS0", caps.PasswordMaxLength);
         await using var cmd = new FbCommand("""
             INSERT INTO DBUSUARIOS (USUARIO, NOMBRE, CARGO, PASS_WORD, ACTIVO, MODIFICAR, AGREGAR, ELIMINAR, IMPRIMIR, CAMBIOPW, INGRESOPJ, INGRESOGT, SUPSISTEMA, PERFIL, JTURNO, USUAING, USUAMOD)
-            VALUES (@U, 'BARRIAGADA', 'ADMIN SISTEMA', @PW, '1', '1', '1', '1', '1', '1', '1', '1', '1', 2, '1', @U, @U)
+            VALUES (@U, @NOM, @CAR, @PW, '1', '1', '1', '1', '1', '1', '1', '1', '1', 2, '1', @U, @U)
             """, conn);
         cmd.Parameters.AddWithValue("@U", nextId);
-        cmd.Parameters.AddWithValue("@PW", adminHash);
+        cmd.Parameters.AddWithValue("@NOM", DatabaseSessionFactory.FitLength("BARRIAGADA", caps.UsernameMaxLength));
+        cmd.Parameters.AddWithValue("@CAR", DatabaseSessionFactory.FitLength("ADMIN SISTEMA", caps.UsernameMaxLength));
+        cmd.Parameters.AddWithValue("@PW", pwToStore);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 

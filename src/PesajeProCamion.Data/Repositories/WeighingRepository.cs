@@ -152,9 +152,9 @@ public sealed class WeighingRepository
             AddParam(cmd, "@TM", tr.TipoMop);
             AddParam(cmd, "@LA", tr.Largo);
             AddParam(cmd, "@MB", tr.MaxBruto);
-            AddParam(cmd, "@CH", tr.Chofer.Trim());
-            AddParam(cmd, "@OB1", tr.Observacion1.Trim());
-            AddParam(cmd, "@TR", tr.Transportista.Trim());
+            AddParam(cmd, "@CH", FitLength(tr.Chofer, caps.ChoferPesajeMaxLength));
+            AddParam(cmd, "@OB1", FitLength(tr.Observacion1, caps.ObservacionMaxLength));
+            AddParam(cmd, "@TR", FitLength(tr.Transportista, 10));
             AddParam(cmd, "@TP", (short)tr.TipoPesaje);
             AddParam(cmd, "@SV", tr.SavedToServer);
             AddParam(cmd, "@UI", tr.UsuarioIngreso);
@@ -229,11 +229,11 @@ public sealed class WeighingRepository
             AddParam(insCmd, "@LA", p.Largo);
             AddParam(insCmd, "@MB", p.MaxBruto);
             AddParam(insCmd, "@EM", ((short)p.EstadoMop).ToString(CultureInfo.InvariantCulture));
-            AddParam(insCmd, "@CH", p.Chofer.Trim());
+            AddParam(insCmd, "@CH", FitLength(p.Chofer, caps.ChoferPesajeMaxLength));
             AddParam(insCmd, "@TRS", p.Traspaso);
-            AddParam(insCmd, "@OB1", p.Observacion1.Trim());
-            AddParam(insCmd, "@OB2", p.Observacion2.Trim());
-            AddParam(insCmd, "@TR", p.Transportista.Trim());
+            AddParam(insCmd, "@OB1", FitLength(p.Observacion1, caps.ObservacionMaxLength));
+            AddParam(insCmd, "@OB2", FitLength(p.Observacion2, caps.ObservacionMaxLength));
+            AddParam(insCmd, "@TR", FitLength(p.Transportista, 10));
             AddParam(insCmd, "@TRG", p.TaraRegistrada ? "1" : "0");
             AddParam(insCmd, "@TP", (short)p.TipoPesaje);
             AddParam(insCmd, "@SV", p.SavedToServer);
@@ -282,22 +282,85 @@ public sealed class WeighingRepository
         DateTime now = DateTime.Now;
         await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
-            await using var archCmd = new FbCommand("""
-                INSERT INTO DBTRAN_ANUL (
-                    FLPESAJE, PATENTE, ACOPLADO, PRODUCTO, CLIENTE, DESTINO, GDESPACHO, NETOINF,
-                    FECHAING, HORAING, BRUTO, TARA, TMOP, LARGO, MAXBRUTO, OBSERVA, CHOFER, TRANSP,
-                    USUAING, FECHAANUL, HORAANUL, USUAANUL, MOTIVO)
-                SELECT FLPESAJE, PATENTE, ACOPLADO, PRODUCTO, CLIENTE, DESTINO, GDESPACHO, NETOINF,
-                       FECHAING, HORAING, BRUTO, TARA, TMOP, LARGO, MAXBRUTO, OBSERVA1, CHOFER, TRANSP,
-                       USUAING, @FA, @HA, @UA, @MO
-                FROM DBTRANSITO WHERE FLPESAJE = @FP
-                """, conn, tx);
-            AddParam(archCmd, "@FA", now.Date);
-            AddParam(archCmd, "@HA", now.ToString("HH:mm", CultureInfo.InvariantCulture));
-            AddParam(archCmd, "@UA", usuarioId);
-            AddParam(archCmd, "@MO", motivo.Length > 120 ? motivo[..120] : motivo);
-            AddParam(archCmd, "@FP", folioPesaje);
-            await archCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            if (caps.HasTranAnulAuditColumns)
+            {
+                await using var archCmd = new FbCommand("""
+                    INSERT INTO DBTRAN_ANUL (
+                        FLPESAJE, PATENTE, ACOPLADO, PRODUCTO, CLIENTE, DESTINO, GDESPACHO, NETOINF,
+                        FECHAING, HORAING, BRUTO, TARA, TMOP, LARGO, MAXBRUTO, OBSERVA, CHOFER, TRANSP,
+                        USUAING, FECHAANUL, HORAANUL, USUAANUL, MOTIVO)
+                    SELECT FLPESAJE, PATENTE, ACOPLADO, PRODUCTO, CLIENTE, DESTINO, GDESPACHO, NETOINF,
+                           FECHAING, HORAING, BRUTO, TARA, TMOP, LARGO, MAXBRUTO, OBSERVA1, CHOFER, TRANSP,
+                           USUAING, @FA, @HA, @UA, @MO
+                    FROM DBTRANSITO WHERE FLPESAJE = @FP
+                    """, conn, tx);
+                AddParam(archCmd, "@FA", now.Date);
+                AddParam(archCmd, "@HA", now.ToString("HH:mm", CultureInfo.InvariantCulture));
+                AddParam(archCmd, "@UA", usuarioId);
+                AddParam(archCmd, "@MO", FitLength(motivo, 120));
+                AddParam(archCmd, "@FP", folioPesaje);
+                await archCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await using var selTr = new FbCommand("SELECT FIRST 1 * FROM DBTRANSITO WHERE FLPESAJE = @FP", conn, tx);
+                AddParam(selTr, "@FP", folioPesaje);
+                await using FbDataReader trR = await selTr.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                if (await trR.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    string pat = GetStr(trR, "PATENTE");
+                    string aco = GetStr(trR, "ACOPLADO");
+                    string prod = FitLength(GetStr(trR, "PRODUCTO"), 10);
+                    string cli = FitLength(GetStr(trR, "CLIENTE"), 10);
+                    string dest = FitLength(GetStr(trR, "DESTINO"), 10);
+                    string gdespStr = GetStr(trR, "GDESPACHO");
+                    int netInf = GetInt(trR, "NETOINF");
+                    DateTime fi = GetDate(trR, "FECHAING") ?? now.Date;
+                    string hi = GetStr(trR, "HORAING");
+                    int br = GetInt(trR, "BRUTO");
+                    int ta = GetInt(trR, "TARA");
+                    short tm = GetShort(trR, "TMOP");
+                    short la = GetShort(trR, "LARGO");
+                    int mb = GetInt(trR, "MAXBRUTO");
+                    string obs = FitLength(GetStr(trR, "OBSERVA1"), caps.ObservacionMaxLength);
+                    string chof = FitLength(GetStr(trR, "CHOFER"), 35);
+                    string trsp = FitLength(GetStr(trR, "TRANSP"), 10);
+                    short ui = GetShort(trR, "USUAING", usuarioId);
+                    await trR.CloseAsync().ConfigureAwait(false);
+
+                    await using var legCmd = new FbCommand("""
+                        INSERT INTO DBTRAN_ANUL (
+                            FLPESAJE, PATENTE, ACOPLADO, PRODUCTO, CLIENTE, DESTINO, GDESPACHO, NETOINF,
+                            FECHAING, HORAING, BRUTO, TARA, TMOP, LARGO, MAXBRUTO, OBSERVA, CHOFER, TRANSP, USUAING)
+                        VALUES (
+                            @FP, @PAT, @ACO, @PR, @CL, @DE, @GD, @NI,
+                            @FI, @HI, @BR, @TA, @TM, @LA, @MB, @OB, @CH, @TR, @UI)
+                        """, conn, tx);
+                    AddParam(legCmd, "@FP", folioPesaje);
+                    AddParam(legCmd, "@PAT", pat);
+                    AddParam(legCmd, "@ACO", aco);
+                    AddParam(legCmd, "@PR", prod);
+                    AddParam(legCmd, "@CL", cli);
+                    AddParam(legCmd, "@DE", dest);
+                    object gdParam = caps.TranAnulGdespachoIsInteger
+                        ? (int.TryParse(gdespStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out int gdInt) ? gdInt : 0)
+                        : FitLength(gdespStr, 50);
+                    AddParam(legCmd, "@GD", gdParam);
+                    AddParam(legCmd, "@NI", netInf);
+                    AddParam(legCmd, "@FI", fi);
+                    AddParam(legCmd, "@HI", hi);
+                    AddParam(legCmd, "@BR", br);
+                    AddParam(legCmd, "@TA", ta);
+                    AddParam(legCmd, "@TM", tm);
+                    AddParam(legCmd, "@LA", la);
+                    AddParam(legCmd, "@MB", mb);
+                    AddParam(legCmd, "@OB", obs);
+                    AddParam(legCmd, "@CH", chof);
+                    AddParam(legCmd, "@TR", trsp);
+                    AddParam(legCmd, "@UI", ui);
+                    await legCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+            }
 
             await using var delCmd = new FbCommand("DELETE FROM DBTRANSITO WHERE FLPESAJE = @FP", conn, tx);
             AddParam(delCmd, "@FP", folioPesaje);
@@ -309,35 +372,72 @@ public sealed class WeighingRepository
 
     public async Task<List<RegistroTransitoAnulado>> GetTransitoAnuladoAsync(DateTime desde, DateTime hasta, CancellationToken ct = default)
     {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         var list = new List<RegistroTransitoAnulado>();
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = new FbCommand("""
-            SELECT T.*, COALESCE(U.NOMBRE, '') AS NMUSUAANUL
-            FROM DBTRAN_ANUL T
-            LEFT JOIN DBUSUARIOS U ON U.USUARIO = T.USUAANUL
-            WHERE T.FECHAANUL >= @D AND T.FECHAANUL <= @H
-            ORDER BY T.FECHAANUL DESC, T.FLPESAJE DESC
-            """, conn);
-        AddParam(cmd, "@D", desde.Date);
-        AddParam(cmd, "@H", hasta.Date);
-        await using FbDataReader r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        while (await r.ReadAsync(ct).ConfigureAwait(false))
+
+        if (caps.HasTranAnulAuditColumns)
         {
+            await using var cmd = new FbCommand("""
+                SELECT T.*, COALESCE(U.NOMBRE, '') AS NMUSUAANUL
+                FROM DBTRAN_ANUL T
+                LEFT JOIN DBUSUARIOS U ON U.USUARIO = T.USUAANUL
+                WHERE T.FECHAANUL >= @D AND T.FECHAANUL <= @H
+                ORDER BY T.FECHAANUL DESC, T.FLPESAJE DESC
+                """, conn);
+            AddParam(cmd, "@D", desde.Date);
+            AddParam(cmd, "@H", hasta.Date);
+            await using FbDataReader r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await r.ReadAsync(ct).ConfigureAwait(false))
+            {
+                list.Add(new RegistroTransitoAnulado
+                {
+                    FolioPesaje = GetInt(r, "FLPESAJE"),
+                    Patente = GetStr(r, "PATENTE"),
+                    Producto = GetStr(r, "PRODUCTO"),
+                    Cliente = GetStr(r, "CLIENTE"),
+                    FechaIngreso = GetDate(r, "FECHAING") ?? DateTime.MinValue,
+                    HoraIngreso = GetStr(r, "HORAING"),
+                    Bruto = GetInt(r, "BRUTO"),
+                    Tara = GetInt(r, "TARA"),
+                    Observacion = GetStr(r, "OBSERVA"),
+                    FechaAnulacion = GetDate(r, "FECHAANUL") ?? DateTime.MinValue,
+                    HoraAnulacion = GetStr(r, "HORAANUL"),
+                    NombreUsuarioAnulacion = GetStr(r, "NMUSUAANUL"),
+                    Motivo = GetStr(r, "MOTIVO")
+                });
+            }
+            return list;
+        }
+
+        await using var legCmd = new FbCommand("""
+            SELECT T.*, COALESCE(U.NOMBRE, '') AS NMUSUAING
+            FROM DBTRAN_ANUL T
+            LEFT JOIN DBUSUARIOS U ON U.USUARIO = T.USUAING
+            WHERE T.FECHAING >= @D AND T.FECHAING <= @H
+            ORDER BY T.FECHAING DESC, T.FLPESAJE DESC
+            """, conn);
+        AddParam(legCmd, "@D", desde.Date);
+        AddParam(legCmd, "@H", hasta.Date);
+        await using FbDataReader lr = await legCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await lr.ReadAsync(ct).ConfigureAwait(false))
+        {
+            DateTime fIng = GetDate(lr, "FECHAING") ?? DateTime.MinValue;
             list.Add(new RegistroTransitoAnulado
             {
-                FolioPesaje = GetInt(r, "FLPESAJE"),
-                Patente = GetStr(r, "PATENTE"),
-                Producto = GetStr(r, "PRODUCTO"),
-                Cliente = GetStr(r, "CLIENTE"),
-                FechaIngreso = GetDate(r, "FECHAING") ?? DateTime.MinValue,
-                HoraIngreso = GetStr(r, "HORAING"),
-                Bruto = GetInt(r, "BRUTO"),
-                Tara = GetInt(r, "TARA"),
-                Observacion = GetStr(r, "OBSERVA"),
-                FechaAnulacion = GetDate(r, "FECHAANUL") ?? DateTime.MinValue,
-                HoraAnulacion = GetStr(r, "HORAANUL"),
-                NombreUsuarioAnulacion = GetStr(r, "NMUSUAANUL"),
-                Motivo = GetStr(r, "MOTIVO")
+                FolioPesaje = GetInt(lr, "FLPESAJE"),
+                Patente = GetStr(lr, "PATENTE"),
+                Producto = GetStr(lr, "PRODUCTO"),
+                Cliente = GetStr(lr, "CLIENTE"),
+                FechaIngreso = fIng,
+                HoraIngreso = GetStr(lr, "HORAING"),
+                Bruto = GetInt(lr, "BRUTO"),
+                Tara = GetInt(lr, "TARA"),
+                Observacion = GetStr(lr, "OBSERVA"),
+                FechaAnulacion = fIng,
+                HoraAnulacion = GetStr(lr, "HORAING"),
+                NombreUsuarioAnulacion = GetStr(lr, "NMUSUAING"),
+                Motivo = "(BD Legacy sin motivo)"
             });
         }
         return list;
@@ -531,9 +631,9 @@ public sealed class WeighingRepository
                 AddParam(trCmd, "@TM", ticket.TipoMop);
                 AddParam(trCmd, "@LA", ticket.Largo);
                 AddParam(trCmd, "@MB", ticket.MaxBruto);
-                AddParam(trCmd, "@CH", ticket.Chofer.Trim());
-                AddParam(trCmd, "@OB1", ticket.Observacion1.Trim());
-                AddParam(trCmd, "@TR", ticket.Transportista.Trim());
+                AddParam(trCmd, "@CH", FitLength(ticket.Chofer, caps.ChoferPesajeMaxLength));
+                AddParam(trCmd, "@OB1", FitLength(ticket.Observacion1, caps.ObservacionMaxLength));
+                AddParam(trCmd, "@TR", FitLength(ticket.Transportista, 10));
                 AddParam(trCmd, "@TP", (short)ticket.TipoPesaje);
                 AddParam(trCmd, "@SV", ticket.SavedToServer);
                 AddParam(trCmd, "@UI", usuarioId);
@@ -547,7 +647,7 @@ public sealed class WeighingRepository
             ticket.Neto = ticket.Anulado
                 ? 0
                 : (preserveManualNeto ? Math.Max(0, ticket.Neto) : WeighingCalculator.CalcularNeto(ticket.Bruto, ticket.Tara));
-            await using var insCmd = CreateInsertPesajeCommand(conn, tx, ticket, usuarioId);
+            await using var insCmd = CreateInsertPesajeCommand(conn, tx, caps, ticket, usuarioId);
             await insCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
             await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBPESAJES", ticket.FolioPesaje.ToString(CultureInfo.InvariantCulture), "CREAR_TICKET", $"Patente={pat}, Bruto={ticket.Bruto}, Tara={ticket.Tara}, Neto={ticket.Neto}", ct).ConfigureAwait(false);
@@ -555,7 +655,7 @@ public sealed class WeighingRepository
         }, ct).ConfigureAwait(false);
     }
 
-    private static FbCommand CreateInsertPesajeCommand(FbConnection conn, FbTransaction tx, Pesaje ticket, short usuarioId)
+    private static FbCommand CreateInsertPesajeCommand(FbConnection conn, FbTransaction tx, DatabaseCapabilities caps, Pesaje ticket, short usuarioId)
     {
         var insCmd = new FbCommand("""
             INSERT INTO DBPESAJES (
@@ -575,11 +675,11 @@ public sealed class WeighingRepository
         AddParam(insCmd, "@PAT", ticket.Patente);
         AddParam(insCmd, "@ACO", ticket.Acoplado);
         AddParam(insCmd, "@FM", ticket.FolioPesajeMop);
-        AddParam(insCmd, "@PR", ticket.Producto.Trim());
-        AddParam(insCmd, "@CL", ticket.Cliente.Trim());
-        AddParam(insCmd, "@OR", ticket.Origen.Trim());
-        AddParam(insCmd, "@DE", ticket.Destino.Trim());
-        AddParam(insCmd, "@GD", ticket.GuiaDespacho.Trim());
+        AddParam(insCmd, "@PR", FitLength(ticket.Producto, 10));
+        AddParam(insCmd, "@CL", FitLength(ticket.Cliente, 10));
+        AddParam(insCmd, "@OR", FitLength(ticket.Origen, 10));
+        AddParam(insCmd, "@DE", FitLength(ticket.Destino, 10));
+        AddParam(insCmd, "@GD", FitLength(ticket.GuiaDespacho, 50));
         AddParam(insCmd, "@NI", ticket.NetoInformado);
         AddParam(insCmd, "@FI", ticket.FechaIngreso.Date);
         AddParam(insCmd, "@HI", ticket.HoraIngreso);
@@ -594,11 +694,11 @@ public sealed class WeighingRepository
         AddParam(insCmd, "@LA", ticket.Largo);
         AddParam(insCmd, "@MB", ticket.MaxBruto);
         AddParam(insCmd, "@EM", ((short)ticket.EstadoMop).ToString(CultureInfo.InvariantCulture));
-        AddParam(insCmd, "@CH", ticket.Chofer.Trim());
+        AddParam(insCmd, "@CH", FitLength(ticket.Chofer, caps.ChoferPesajeMaxLength));
         AddParam(insCmd, "@TRS", ticket.Traspaso);
-        AddParam(insCmd, "@OB1", ticket.Observacion1.Trim());
-        AddParam(insCmd, "@OB2", ticket.Observacion2.Trim());
-        AddParam(insCmd, "@TR", ticket.Transportista.Trim());
+        AddParam(insCmd, "@OB1", FitLength(ticket.Observacion1, caps.ObservacionMaxLength));
+        AddParam(insCmd, "@OB2", FitLength(ticket.Observacion2, caps.ObservacionMaxLength));
+        AddParam(insCmd, "@TR", FitLength(ticket.Transportista, 10));
         AddParam(insCmd, "@TRG", ticket.TaraRegistrada ? "1" : "0");
         AddParam(insCmd, "@TP", (short)ticket.TipoPesaje);
         AddParam(insCmd, "@SV", ticket.SavedToServer);
@@ -642,9 +742,9 @@ public sealed class WeighingRepository
             AddParam(cmd, "@HI", tr.HoraIngreso);
             AddParam(cmd, "@BR", tr.Bruto);
             AddParam(cmd, "@TA", tr.Tara);
-            AddParam(cmd, "@CH", tr.Chofer.Trim());
-            AddParam(cmd, "@OB1", tr.Observacion1.Trim());
-            AddParam(cmd, "@TR", tr.Transportista.Trim());
+            AddParam(cmd, "@CH", FitLength(tr.Chofer, caps.ChoferPesajeMaxLength));
+            AddParam(cmd, "@OB1", FitLength(tr.Observacion1, caps.ObservacionMaxLength));
+            AddParam(cmd, "@TR", FitLength(tr.Transportista, 10));
             AddParam(cmd, "@TP", (short)tr.TipoPesaje);
             AddParam(cmd, "@FP", tr.FolioPesaje);
             int affected = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -702,10 +802,10 @@ public sealed class WeighingRepository
             AddParam(cmd, "@BR", p.Bruto);
             AddParam(cmd, "@TA", p.Tara);
             AddParam(cmd, "@NE", p.Neto);
-            AddParam(cmd, "@CH", p.Chofer.Trim());
-            AddParam(cmd, "@OB1", p.Observacion1.Trim());
-            AddParam(cmd, "@OB2", p.Observacion2.Trim());
-            AddParam(cmd, "@TR", p.Transportista.Trim());
+            AddParam(cmd, "@CH", FitLength(p.Chofer, caps.ChoferPesajeMaxLength));
+            AddParam(cmd, "@OB1", FitLength(p.Observacion1, caps.ObservacionMaxLength));
+            AddParam(cmd, "@OB2", FitLength(p.Observacion2, caps.ObservacionMaxLength));
+            AddParam(cmd, "@TR", FitLength(p.Transportista, 10));
             AddParam(cmd, "@TRG", p.TaraRegistrada ? "1" : "0");
             AddParam(cmd, "@TP", (short)p.TipoPesaje);
             AddParam(cmd, "@AN", p.Anulado ? "1" : "0");
@@ -825,8 +925,8 @@ public sealed class WeighingRepository
             {
                 string tagOrig = $"Dividido #{request.OriginalFolio}->{request.OriginalFolio}/{newFolio} (Orig {origNeto})";
                 string tagNew = $"División desde Folio #{request.OriginalFolio} (Orig {origNeto})";
-                obs1Orig = tagOrig.Length > 120 ? tagOrig[..120] : tagOrig;
-                obs2New = tagNew.Length > 120 ? tagNew[..120] : tagNew;
+                obs1Orig = FitLength(tagOrig, caps.ObservacionMaxLength);
+                obs2New = FitLength(tagNew, caps.ObservacionMaxLength);
             }
 
             DateTime now = DateTime.Now;
@@ -853,7 +953,7 @@ public sealed class WeighingRepository
             clone.Tara = request.TaraParte2;
             clone.Neto = request.NetoParte2;
             clone.Observacion2 = obs2New;
-            await using var insNew = CreateInsertPesajeCommand(conn, tx, clone, usuarioId);
+            await using var insNew = CreateInsertPesajeCommand(conn, tx, caps, clone, usuarioId);
             await insNew.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
             await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBPESAJES", request.OriginalFolio.ToString(CultureInfo.InvariantCulture), "DIVIDIR_ORIGEN", $"Neto1={request.NetoParte1}, NuevoFolio={newFolio}, Neto2={request.NetoParte2}", ct).ConfigureAwait(false);

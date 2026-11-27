@@ -6,7 +6,7 @@ Sistema integral de pesaje de camiones en báscula comercial, control de peso po
 
 ## Descripción del Proyecto
 
-**PesajeProCamion v2.2.0 LTS** unifica y moderniza la operación completa de romana y administración bajo una interfaz corporativa **Petrol Teal + Dorado** 100% responsiva (validada desde `1024x700` hasta `4K`), eliminando dependencias legacy BDE/ODS 9.1, conectándose a bases locales o compartidas en red (`\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`), protegiendo folios contra colisiones e incorporando personalización/edición avanzada de tickets, división de tickets en 2 folios e inteligencia de negocio BI (PDF + Excel `.xlsx`).
+**PesajeProCamion v2.2.1 LTS** unifica y moderniza la operación completa de romana y administración bajo una interfaz corporativa **Petrol Teal + Dorado** 100% responsiva (validada desde `1024x700` hasta `4K`), eliminando dependencias legacy BDE/ODS 9.1, conectándose a bases locales o compartidas en red (`\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`), protegiendo folios contra colisiones e incorporando personalización/edición avanzada de tickets, división de tickets en 2 folios e inteligencia de negocio BI (PDF + Excel `.xlsx`).
 
 ### Características Principales
 - **Visor Personalizable y Editor en Vivo de Tickets (`TicketViewerDialog`)**:
@@ -70,13 +70,13 @@ Sistema integral de pesaje de camiones en báscula comercial, control de peso po
 ## Instalación
 
 ### Opción 1 — Instalador Windows (Inno Setup 7)
-Descargue `PesajeProCamion_Setup_v2.2.0.exe` desde la sección **Releases** de GitHub y ejecute el asistente (actualiza versiones anteriores conservando configuración y datos):
+Descargue `PesajeProCamion_Setup_v2.2.1.exe` desde la sección **Releases** de GitHub y ejecute el asistente (actualiza versiones anteriores conservando configuración y datos):
 ```powershell
-PesajeProCamion_Setup_v2.2.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+PesajeProCamion_Setup_v2.2.1.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ### Opción 2 — Edición Portable Zero-Dependencias
-Descomprima `PesajeProCamion_Portable_v2.2.0_win-x64.zip` y ejecute `PesajeProCamion.App.exe` directamente sin instalar ni requerir privilegios administrativos. Con `portable.flag` o `appsettings.json` junto al ejecutable, la configuración y los archivos `Logs\` se conservan junto al binario.
+Descomprima `PesajeProCamion_Portable_v2.2.1_win-x64.zip` y ejecute `PesajeProCamion.App.exe` directamente sin instalar ni requerir privilegios administrativos. Con `portable.flag` o `appsettings.json` junto al ejecutable, la configuración y los archivos `Logs\` se conservan junto al binario.
 
 ---
 
@@ -122,7 +122,7 @@ Documentación detallada en `docs/`:
 
 ## Versionado e Historial de Cambios
 
-Versionado semántico (`MAJOR.MINOR.PATCH`). Versión actual: **`2.2.0`**.
+Versionado semántico (`MAJOR.MINOR.PATCH`). Versión actual: **`2.2.1`**.
 Ver historial completo en [CHANGELOG.md](CHANGELOG.md).
 
 ## Créditos

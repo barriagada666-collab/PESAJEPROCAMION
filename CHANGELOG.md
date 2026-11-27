@@ -1,5 +1,11 @@
 # Historial de Cambios (CHANGELOG)
 
+## [2.2.1] - 2026-11-27
+### Corregido (Compatibilidad BD Remota Legacy ODS 9 / Firebird)
+- **`DBLOGSINGRESO` sin columna `ID_LOG` (error SQL `-206 Column unknown ID_LOG`)**: `DatabaseCapabilities` detecta `HasLogIngresoId`; tanto `RegistrarLogIngresoAsync` como `GetLogsIngresoAsync` omiten `ID_LOG` automáticamente en bases remotas legacy, eliminando el error al iniciar sesión e inspeccionar logs.
+- **`DBTRAN_ANUL` legacy sin `FECHAANUL`/`USUAANUL`/`MOTIVO` y `GDESPACHO` entero**: `DatabaseCapabilities` detecta `HasTranAnulAuditColumns` y `TranAnulGdespachoIsInteger`; `EliminarTransitoAsync` y `GetTransitoAnuladoAsync` archivan y consultan anulaciones de tránsito de forma nativa sin errores SQL `-206`.
+- **Protección contra truncamientos en campos legacy (`VARCHAR(50)` / `VARCHAR(12)` / `VARCHAR(20)` / `VARCHAR(10)`)**: `FitLength` ajusta longitudes dinámicamente en `OBSERVA1`/`OBSERVA2`, `CHOFER`, `DBUSUARIOS.NOMBRE`/`CARGO` y `EnsureBarriagadaAdminAsync`.
+
 ## [2.2.0] - 2026-11-27
 ### Agregado
 - **Personalización y Edición en Vivo en Visor de Tickets (`TicketViewerDialog` + `TicketFieldVisibility`)**:

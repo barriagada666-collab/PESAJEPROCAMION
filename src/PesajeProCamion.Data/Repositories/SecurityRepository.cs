@@ -92,7 +92,14 @@ public sealed class SecurityRepository
             AppLogger.Info("Security", $"Base remota con PASS_WORD de largo {caps.PasswordMaxLength}: se omite actualización a hash largo PBKDF2.");
         }
 
-        await RegistrarLogIngresoAsync(user.Id, sistemaId, accionId: 1, turno: 0, ct).ConfigureAwait(false);
+        try
+        {
+            await RegistrarLogIngresoAsync(user.Id, sistemaId, accionId: 1, turno: 0, ct).ConfigureAwait(false);
+        }
+        catch (FbException ex)
+        {
+            AppLogger.Warn("Security", $"No se pudo registrar log de ingreso para '{user.Nombre}' (se permite acceso): {ex.Message}");
+        }
         AppLogger.Info("Security", $"Inicio de sesión: {user.Nombre} (ID={user.Id}, Sistema={sistemaId}).");
         return user;
     }
@@ -127,8 +134,8 @@ public sealed class SecurityRepository
         return await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
             bool esNuevo = u.Id <= 0;
-            string normName = u.Nombre.Trim().ToUpperInvariant();
-            if (normName.Length > 40) normName = normName[..40];
+            string normName = FitLength(u.Nombre.ToUpperInvariant(), caps.UsernameMaxLength);
+            string normCargo = FitLength(u.Cargo.ToUpperInvariant(), caps.UsernameMaxLength);
 
             await using var dupCmd = new FbCommand("SELECT COUNT(*) FROM DBUSUARIOS WHERE UPPER(TRIM(NOMBRE)) = @N AND USUARIO <> @U", conn, tx);
             AddParam(dupCmd, "@N", normName);
@@ -193,8 +200,8 @@ public sealed class SecurityRepository
                 MATCHING (USUARIO)
                 """, conn, tx);
             AddParam(cmd, "@U", u.Id);
-            AddParam(cmd, "@N", u.Nombre.Trim().ToUpperInvariant());
-            AddParam(cmd, "@C", u.Cargo.Trim().ToUpperInvariant());
+            AddParam(cmd, "@N", normName);
+            AddParam(cmd, "@C", normCargo);
             AddParam(cmd, "@PW", passwordToStore);
             AddParam(cmd, "@AC", u.Activo ? "1" : "0");
             AddParam(cmd, "@MO", u.PuedeModificar ? "1" : "0");
@@ -286,39 +293,58 @@ public sealed class SecurityRepository
         DateTime now = DateTime.Now;
         await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
-            int nextLogId;
-            if (caps.HasGenLogIngreso)
+            if (caps.HasLogIngresoId)
             {
-                await using var gen = new FbCommand("SELECT NEXT VALUE FOR GEN_LOGINGRESO FROM RDB$DATABASE", conn, tx);
-                nextLogId = Convert.ToInt32(await gen.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
-            }
-            else
-            {
-                await using var maxCmd = new FbCommand("SELECT COALESCE(MAX(ID_LOG), 0) + 1 FROM DBLOGSINGRESO", conn, tx);
-                nextLogId = Convert.ToInt32(await maxCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+                int nextLogId;
+                if (caps.HasGenLogIngreso)
+                {
+                    await using var gen = new FbCommand("SELECT NEXT VALUE FOR GEN_LOGINGRESO FROM RDB$DATABASE", conn, tx);
+                    nextLogId = Convert.ToInt32(await gen.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    await using var maxCmd = new FbCommand("SELECT COALESCE(MAX(ID_LOG), 0) + 1 FROM DBLOGSINGRESO", conn, tx);
+                    nextLogId = Convert.ToInt32(await maxCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+                }
+
+                await using var cmd = new FbCommand("""
+                    INSERT INTO DBLOGSINGRESO (ID_LOG, USUARIO, SISTEMA, FECHA, HORA, TURNO, ACCION)
+                    VALUES (@ID, @U, @S, @F, @H, @T, @A)
+                    """, conn, tx);
+                AddParam(cmd, "@ID", nextLogId);
+                AddParam(cmd, "@U", usuarioId);
+                AddParam(cmd, "@S", sistemaId);
+                AddParam(cmd, "@F", now.Date);
+                AddParam(cmd, "@H", now.ToString("HH:mm", CultureInfo.InvariantCulture));
+                AddParam(cmd, "@T", turno);
+                AddParam(cmd, "@A", accionId);
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                return;
             }
 
-            await using var cmd = new FbCommand("""
-                INSERT INTO DBLOGSINGRESO (ID_LOG, USUARIO, SISTEMA, FECHA, HORA, TURNO, ACCION)
-                VALUES (@ID, @U, @S, @F, @H, @T, @A)
+            await using var legacyCmd = new FbCommand("""
+                INSERT INTO DBLOGSINGRESO (USUARIO, SISTEMA, FECHA, HORA, TURNO, ACCION)
+                VALUES (@U, @S, @F, @H, @T, @A)
                 """, conn, tx);
-            AddParam(cmd, "@ID", nextLogId);
-            AddParam(cmd, "@U", usuarioId);
-            AddParam(cmd, "@S", sistemaId);
-            AddParam(cmd, "@F", now.Date);
-            AddParam(cmd, "@H", now.ToString("HH:mm", CultureInfo.InvariantCulture));
-            AddParam(cmd, "@T", turno);
-            AddParam(cmd, "@A", accionId);
-            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            AddParam(legacyCmd, "@U", usuarioId);
+            AddParam(legacyCmd, "@S", sistemaId);
+            AddParam(legacyCmd, "@F", now.Date);
+            AddParam(legacyCmd, "@H", now.ToString("HH:mm", CultureInfo.InvariantCulture));
+            AddParam(legacyCmd, "@T", turno);
+            AddParam(legacyCmd, "@A", accionId);
+            await legacyCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
     }
 
     public async Task<List<LogIngreso>> GetLogsIngresoAsync(DateTime desde, DateTime hasta, int? sistemaFiltro = null, CancellationToken ct = default)
     {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         var list = new List<LogIngreso>();
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        string sql = """
-            SELECT L.ID_LOG, L.USUARIO, COALESCE(U.NOMBRE, 'USUARIO #' || CAST(L.USUARIO AS VARCHAR(10))) AS NMUSUARIO,
+        string idSelect = caps.HasLogIngresoId ? "L.ID_LOG" : "0 AS ID_LOG";
+        string orderBy = caps.HasLogIngresoId ? "L.FECHA DESC, L.HORA DESC, L.ID_LOG DESC" : "L.FECHA DESC, L.HORA DESC";
+        string sql = $"""
+            SELECT {idSelect}, L.USUARIO, COALESCE(U.NOMBRE, 'USUARIO #' || CAST(L.USUARIO AS VARCHAR(10))) AS NMUSUARIO,
                    L.SISTEMA, COALESCE(S.DESCRIP, 'SISTEMA ' || CAST(L.SISTEMA AS VARCHAR(10))) AS NMSISTEMA,
                    L.FECHA, L.HORA, L.TURNO, L.ACCION, COALESCE(A.DESCRIP, 'ACCION ' || CAST(L.ACCION AS VARCHAR(10))) AS NMACCION
             FROM DBLOGSINGRESO L
@@ -331,7 +357,7 @@ public sealed class SecurityRepository
         {
             sql += " AND L.SISTEMA = @SIS";
         }
-        sql += " ORDER BY L.FECHA DESC, L.HORA DESC, L.ID_LOG DESC";
+        sql += $" ORDER BY {orderBy}";
 
         await using var cmd = new FbCommand(sql, conn);
         AddParam(cmd, "@D", desde.Date);
