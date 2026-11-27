@@ -1,32 +1,28 @@
-# Manual Funcional — PesajeProCamion v2.1
+# Manual Funcional — PesajeProCamion v2.2
 
 ## 1. Arranque, Inicio de Sesión y Servidor de BD Remota
-1. Al iniciar **PesajeProCamion**, se muestra la pantalla corporativa de carga (`v2.1.0`) y luego el **Inicio de Sesión**.
+1. Al iniciar **PesajeProCamion**, se muestra la pantalla corporativa de carga (`v2.2.0`) y luego el **Inicio de Sesión**.
 2. Cuenta administradora principal integrada: **`barriagada`** / **`Cambias0`** (puede escribirse en mayúsculas o minúsculas o seleccionarse del listado).
-3. Presione **Servidor BD** (en Login) o **Configurar Servidor BD...** (en la barra superior) para conectarse a un servidor local o remoto:
-   - Ingrese directamente una ruta compartida de red UNC como `\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`.
-   - Use **Probar Conexión** para validar puerto TCP `3050`, ruta en el servidor, latencia y cantidad de pesajes.
-   - Use **Aplicar (Sin Cerrar)** o **Guardar y Conectar** para persistir en `appsettings.json`.
-4. Ante cualquier incidencia técnica, abra **Logs de Errores** en el Login, en la barra superior o en *Acerca de* para revisar o exportar `.log`.
+3. Presione **Servidor BD** (en Login) o **Configurar Servidor BD...** (en la barra superior) para conectarse a un servidor local o remoto (ej.: `\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`). Use **Probar Conexión**, **Aplicar (Sin Cerrar)** o **Guardar y Conectar**.
 
 ## 2. Gestión Completa de Usuarios y Permisos RBAC
 1. Ingrese a *Configuración -> Usuarios y Permisos...* (`UsuariosForm`).
-2. Filtre usuarios por texto en el buscador superior o haga clic derecho sobre la tabla de usuarios para crear, editar, restablecer contraseña, activar/desactivar, eliminar o exportar la nómina a Excel.
-3. Utilice las plantillas rápidas **Admin Total**, **Operador Pesaje** o **Solo Consulta**, o marque individualmente los privilegios (`Agregar`, `Modificar`, `Eliminar`, `Imprimir`, `Sup. Sistema`, `Jefe Turno`) y permisos de ingreso a módulos (`Pesaje` / `Gestión`). El sistema impide eliminar o desactivar el último administrador activo.
+2. Use el buscador superior, plantillas rápidas (**Admin Total**, **Operador Pesaje**, **Solo Consulta**), restablecimiento de clave con visor **Mostrar clave**, activación/desactivación y menú contextual clic derecho.
 
 ## 3. Visor de Báscula RS-232 y Pesaje Comercial
-1. En **Pesaje de Camiones -> Visor / COM**, seleccione puerto (`COM1..COM16`), velocidad, paridad y trama (`STX > 0` con posición/largo, o `STX = 0` por línea `CR/LF`). Use **Probar Trama STX** o `/TEST` en modo simulación.
-2. Ingrese **Patente** y presione `Tab` (autocompleta datos en tránsito o última tara vigente), complete Cliente/Producto/Origen/Destino/Transportista/Chofer (todos autoresuelven nombre o cuentan con búsqueda rápida y menú contextual por clic derecho), capture pesos con **PESAR CAMIÓN**, **PESAR CARRO / 2°** o **APLICAR TARA REGISTRADA** y presione **GRABAR PESAJE**.
-3. Haga clic derecho sobre cualquier camión pendiente en **Camiones En Tránsito** para cargarlo a báscula (2° pesaje), visualizar el ticket en proceso, modificar sus datos o anularlo.
+1. En **Pesaje de Camiones -> Visor / COM**, configure `COM1..COM16`, velocidad, paridad y trama (`STX > 0` o `STX = 0` por línea `CR/LF`).
+2. Ingrese **Patente**, complete catálogos con lupa/Tab, capture pesos con **PESAR CAMIÓN / PESAR CARRO / APLICAR TARA REGISTRADA** y grabe con **GRABAR PESAJE**. Use clic derecho sobre **Camiones En Tránsito** para cargar, visualizar, modificar o anular.
 
-## 4. CRUD de Tickets sin Conflictos de Folio y Visor de Tickets
-1. Tanto desde **Pesaje de Camiones -> Crear Ticket Manual** como desde **Administración de Pesajes -> Nuevo Ticket** (o clic derecho), abra `TicketEditorDialog`:
-   - Elija **Folio automático seguro** (asignación libre de conflicto que respeta `DBPESAJES`, `DBTRANSITO` En Proceso, `DBTRAN_ANUL` y `DBFOLIOS`) o ingrese un folio manual y valídelo con **Validar Folio**.
-   - Active **Crear En Proceso (Tránsito)** si el camión aún permanece en planta sin segundo peso.
-2. Haga doble clic o seleccione **Visualizar** (o clic derecho -> *Visualizar Ticket...*) para abrir `TicketViewerDialog` con logotipo corporativo, estado, selector de copias, impresión, **Exportar PDF**, **Modificar Ticket** y **Copiar Texto**.
-3. Desde **Administración de Pesajes**, puede completar salidas de registros *En Proceso*, modificar históricos/en proceso, duplicar como nuevo ticket, anular/reactivar y exportar a **PDF**, **Excel (`.xlsx`)**, **DBF** o **CSV**.
+## 4. Visor Personalizable, Edición en Vivo, Pesos Manuales y División de Tickets
+1. **Personalización por Checkboxes (`TicketViewerDialog`)**:
+   - Al visualizar cualquier ticket, marque/desmarque libremente los checkboxes de **Campos Visibles del Ticket** (*Patente, Cliente, Producto, Origen, Destino, Transportista, Chofer, Guía Despacho, Fechas/Oper., Observaciones*) o use **Marcar Todos** / **Solo Básicos**. Las preferencias se guardan automáticamente y aplican al visor, impresión, PDF y copia de texto.
+   - La parte superior derecha muestra de forma destacada el **Tipo de Pesaje** (`RECEPCIÓN DE CARGA`, `DESPACHO DE CARGA`, `MOVIMIENTO INTERNO`).
+   - Edite en el panel derecho la información/pesos en tiempo real y presione **Guardar Cambios en BD** si desea persistirlos.
+2. **CRUD con Pesos Manuales (`TicketEditorDialog`)**:
+   - Puede ingresar manualmente **Bruto**, **Tara** y **Neto** (activando o desactivando **Auto-calcular Neto**) sin conflictos de folio y respetando vehículos **En Proceso**.
+3. **Dividir Ticket en 2 Folios (`SplitTicketDialog`)**:
+   - Desde **Administración de Pesajes -> Dividir** (o clic derecho -> *Dividir Ticket en 2...*, o botón **Dividir en 2** en el visor), seleccione un ticket cerrado con Neto ≥ 2 kg, ajuste el reparto (ej.: Neto `10` -> Folio origen `6` + Folio nuevo automático `4`, o presets `50%/50%`, `60%/40%`, `70%/30%`) y confirme. El sistema conserva el folio origen y asigna al segundo ticket un folio libre sin colisión con **En Proceso**.
 
 ## 5. Centro Analítico BI KPI, Segmentación y Reportes
-1. En **Informes y Auditoría** (`0. Panel Analítico KPI & Segmentación`), use el selector de fechas (`Desde` / `Hasta`) o los botones rápidos **Hoy**, **7D**, **Mes** y **Todo**.
-2. Combine en tiempo real los segmentadores **Patente**, **Proveedor/Origen**, **Cliente**, **Producto**, **Tipo**, **Estado** y **Búsqueda** para recalcular instantáneamente las 5 tarjetas **KPI**, las pestañas segmentadas (`Detalle Filtrado`, `Por Cliente`, `Por Proveedor / Origen`, `Por Producto`, `Por Patente`) y los **Gráficos KPI**.
-3. Exporte todo el análisis a **PDF** corporativo o a un libro **Excel (`.xlsx`) de 6 hojas** (`Resumen_KPI`, `Detalle_Pesajes` y resúmenes por cada dimensión), o seleccione cualquiera de los informes clásicos `1..11` (incluyendo MOP, Tonelaje por Turno, Tránsito Eliminado y Logs de Errores).
+1. En **Informes y Auditoría** (`0. Panel Analítico KPI & Segmentación`), filtre con `DatePicker` (**Hoy / 7D / Mes / Todo**) y segmentadores **Patente / Proveedor/Origen / Cliente / Producto / Tipo / Estado**.
+2. Exporte a **PDF** corporativo o **Excel `.xlsx` de 6 hojas** sin dependencias externas.

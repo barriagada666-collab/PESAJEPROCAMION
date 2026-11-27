@@ -20,6 +20,7 @@ public sealed class AppServices : IDisposable
         Weighing = new WeighingRepository(SessionFactory);
         Mop = new MopRepository(SessionFactory);
         Scale = new ScaleReaderService();
+        TicketFields = AppConfigStore.LoadTicketFields();
     }
 
     public DatabaseSettings DatabaseSettings { get; private set; }
@@ -34,6 +35,7 @@ public sealed class AppServices : IDisposable
     public Usuario? UsuarioActual { get; set; }
     public BasculaInfo BasculaActual { get; set; } = new();
     public ConfiguracionSistema ConfigActual { get; set; } = new();
+    public TicketFieldVisibility TicketFields { get; set; } = TicketFieldVisibility.Default;
     public int SistemaActivoId { get; set; } = 2; // 2 = Pesaje, 1 = Gestión
 
     public void UpdateDatabaseSettings(DatabaseSettings newSettings)

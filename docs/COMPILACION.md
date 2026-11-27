@@ -32,5 +32,5 @@ dotnet publish src\PesajeProCamion.App\PesajeProCamion.App.csproj -c Release -r 
 ```
 
 Artefactos resultantes en `installer\Output\`:
-- `PesajeProCamion_Setup_v2.1.0.exe` (Instalador moderno Inno Setup 7 autocontenido)
-- `PesajeProCamion_Portable_v2.1.0_win-x64.zip` (Paquete portable ejecutable sin instalación)
+- `PesajeProCamion_Setup_v2.2.0.exe` (Instalador moderno Inno Setup 7 autocontenido)
+- `PesajeProCamion_Portable_v2.2.0_win-x64.zip` (Paquete portable ejecutable sin instalación)

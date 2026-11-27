@@ -231,6 +231,61 @@ public sealed class WorkflowAndRegressionTests
             manualLoaded.Tara = 14000;
             await weighing.ModificarPesajeAsync(manualLoaded, admin.Id);
             Assert.Equal(18000, (await weighing.GetPesajePorFolioAsync(manualFolio))!.Neto);
+
+            // 4. Ingreso manual independiente Bruto/Tara/Neto + División en 2 respetando En Proceso
+            int splitSourceFolio = await weighing.CreateManualTicketAsync(new Pesaje
+            {
+                Patente = "DIV100",
+                Cliente = "C1",
+                Producto = "P1",
+                Bruto = 25000,
+                Tara = 10000,
+                Neto = 10, // manual override (Neto = 10)
+                FechaIngreso = DateTime.Today,
+                HoraIngreso = "12:00",
+                FechaSalida = DateTime.Today,
+                HoraSalida = "12:15",
+                TipoPesaje = TipoPesaje.Despacho
+            }, crearEnProceso: false, admin.Id, preserveManualNeto: true);
+
+            Pesaje? preSplit = await weighing.GetPesajePorFolioAsync(splitSourceFolio);
+            Assert.NotNull(preSplit);
+            Assert.Equal(10, preSplit.Neto);
+
+            // Insertar un registro en tránsito justo después para confirmar que SplitTicketAsync salta el folio En Proceso
+            int blockingTransitoFolio = await weighing.RegistrarIngresoTransitoAsync(new RegistroTransito
+            {
+                Patente = "BLOK88",
+                FechaIngreso = DateTime.Today,
+                HoraIngreso = "12:20",
+                Bruto = 18000,
+                UsuarioIngreso = admin.Id
+            });
+
+            (int b1, int t1, int n1, int b2, int t2, int n2) = TicketCustomizationHelper.ComputeSplitWeights(20, 10, 10, 6);
+            TicketSplitResult splitRes = await weighing.SplitTicketAsync(new TicketSplitRequest
+            {
+                OriginalFolio = splitSourceFolio,
+                NetoParte1 = n1,
+                NetoParte2 = n2,
+                BrutoParte1 = b1,
+                TaraParte1 = t1,
+                BrutoParte2 = b2,
+                TaraParte2 = t2
+            }, admin.Id);
+
+            Assert.Equal(splitSourceFolio, splitRes.OriginalFolio);
+            Assert.True(splitRes.NewFolio > blockingTransitoFolio);
+            Assert.NotNull(await weighing.GetTransitoPorPatenteAsync("BLOK88")); // folio en proceso intacto
+
+            Pesaje? pOrigAfter = await weighing.GetPesajePorFolioAsync(splitRes.OriginalFolio);
+            Pesaje? pNewAfter = await weighing.GetPesajePorFolioAsync(splitRes.NewFolio);
+            Assert.NotNull(pOrigAfter);
+            Assert.NotNull(pNewAfter);
+            Assert.Equal(6, pOrigAfter.Neto);
+            Assert.Equal(4, pNewAfter.Neto);
+            Assert.Equal("DIV100", pNewAfter.Patente);
+            Assert.Equal(TipoPesaje.Despacho, pNewAfter.TipoPesaje);
         }
         finally
         {

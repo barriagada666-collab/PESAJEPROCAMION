@@ -180,14 +180,39 @@ public sealed class HardwareAndExportTests
             }
 
             string ticketPdf = Path.Combine(tmpDir, "ticket_1001.pdf");
+            var vis = new TicketFieldVisibility
+            {
+                MostrarPatente = true,
+                MostrarCliente = true,
+                MostrarProducto = true,
+                MostrarOrigen = false,
+                MostrarDestino = false,
+                MostrarTransportista = false,
+                MostrarChofer = false,
+                MostrarGuiaDespacho = true
+            };
+            Pesaje sampleCustom = rows[0];
+            sampleCustom.TipoPesaje = TipoPesaje.Despacho;
             TicketPrinterService.ExportCommercialTicketToPdf(
                 ticketPdf,
-                rows[0],
-                new BasculaInfo { NombreEmpresa = "CAMBIASO HNOS", Direccion = "PLACILLA", Rut = "1-9" });
+                sampleCustom,
+                new BasculaInfo { NombreEmpresa = "CAMBIASO HNOS", Direccion = "PLACILLA", Rut = "1-9" },
+                visibility: vis);
             string ticketBytes = File.ReadAllText(ticketPdf, Encoding.ASCII);
             Assert.StartsWith("%PDF-1.4", ticketBytes, StringComparison.Ordinal);
             Assert.Contains("TICKET DE PESAJE COMERCIAL", ticketBytes, StringComparison.Ordinal);
+            Assert.Contains("DESPACHO DE CARGA", ticketBytes, StringComparison.Ordinal);
+            Assert.DoesNotContain("ORIGEN / PROVEEDOR:", ticketBytes, StringComparison.Ordinal);
+            Assert.DoesNotContain("TRANSPORTISTA:", ticketBytes, StringComparison.Ordinal);
             Assert.Contains("%%EOF", ticketBytes, StringComparison.Ordinal);
+
+            string rawHidden = TicketPrinterService.BuildRawTicketText(
+                sampleCustom,
+                new BasculaInfo { NombreEmpresa = "CAMBIASO HNOS" },
+                visibility: vis);
+            Assert.Contains("DESPACHO DE CARGA", rawHidden, StringComparison.Ordinal);
+            Assert.DoesNotContain("ORIGEN / PROVEEDOR", rawHidden, StringComparison.Ordinal);
+            Assert.DoesNotContain("TRANSPORTISTA", rawHidden, StringComparison.Ordinal);
         }
         finally
         {

@@ -34,7 +34,7 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         RegisterGlobalExceptionHandlers();
-        AppLogger.Info("Startup", $"Iniciando PesajeProCamion v2.1.0 (TestMode={testMode}, Portable={AppConfigStore.IsPortableMode}).");
+        AppLogger.Info("Startup", $"Iniciando PesajeProCamion v2.2.0 (TestMode={testMode}, Portable={AppConfigStore.IsPortableMode}).");
 
         SplashForm? splash = null;
         if (!noSplash)

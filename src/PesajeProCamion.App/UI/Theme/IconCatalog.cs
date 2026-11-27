@@ -53,7 +53,8 @@ public enum AppIcon
     Chart,
     Eye,
     Copy,
-    Toggle
+    Toggle,
+    Split
 }
 
 /// <summary>
@@ -358,6 +359,14 @@ public static class IconCatalog
                 g.DrawRectangle(pen, pad + 4, pad + 4, w - 5, w - 5);
                 g.DrawLine(pen, pad, pad, s - pad - 5, pad);
                 g.DrawLine(pen, pad, pad, pad, s - pad - 5);
+                break;
+
+            case AppIcon.Split:
+                g.DrawLine(pen, pad + 1, s * 0.5f, s * 0.45f, s * 0.5f);
+                g.DrawLine(pen, s * 0.45f, s * 0.5f, s - pad - 2, pad + 3);
+                g.DrawLine(pen, s * 0.45f, s * 0.5f, s - pad - 2, s - pad - 3);
+                g.FillEllipse(brush, s - pad - 4, pad + 1, 4, 4);
+                g.FillEllipse(brush, s - pad - 4, s - pad - 5, 4, 4);
                 break;
 
             case AppIcon.Chart:

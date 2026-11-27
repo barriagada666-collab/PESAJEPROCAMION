@@ -158,4 +158,20 @@ public sealed class DomainTests
         Assert.Equal(1, slicePat.Kpis.TicketsAnulados);
         Assert.Equal(20000, slicePat.Kpis.TotalNetoKg);
     }
+
+    [Fact]
+    public void TicketCustomizationHelper_BadgeAndSplitWeights_AreConsistent()
+    {
+        Assert.Equal("RECEPCIÓN DE CARGA", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Recepcion));
+        Assert.Equal("DESPACHO DE CARGA", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Despacho));
+        Assert.Equal("MOVIMIENTO INTERNO", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.MovimientoInterno));
+        Assert.Contains("EN PROCESO", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Recepcion, enProceso: true));
+        Assert.StartsWith("ANULADO", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Despacho, anulado: true));
+
+        (int b1, int t1, int n1, int b2, int t2, int n2) = TicketCustomizationHelper.ComputeSplitWeights(20, 10, 10, 6);
+        Assert.Equal((16, 10, 6, 14, 10, 4), (b1, t1, n1, b2, t2, n2));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => TicketCustomizationHelper.ComputeSplitWeights(20, 10, 10, 10));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TicketCustomizationHelper.ComputeSplitWeights(11, 10, 1, 1));
+    }
 }

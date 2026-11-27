@@ -2,6 +2,7 @@ using System.Text.Json;
 using FirebirdSql.Data.FirebirdClient;
 using PesajeProCamion.Data.Configuration;
 using PesajeProCamion.Domain.Diagnostics;
+using PesajeProCamion.Domain.Entities;
 
 namespace PesajeProCamion.App.Services;
 
@@ -72,15 +73,65 @@ public sealed class AppConfigStore
     public static void SaveDatabaseSettings(DatabaseSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        StoredConfig current = ReadStoredConfigOrDefault();
+        current.DataSource = settings.DataSource;
+        current.Port = settings.Port;
+        current.DatabasePath = settings.DatabasePath;
+        current.UserId = settings.UserId;
+        current.Password = settings.Password;
+        current.Charset = settings.Charset;
+        current.Dialect = settings.Dialect;
+        current.ConnectionTimeout = settings.ConnectionTimeout;
+        current.RawNetworkPath = settings.RawNetworkPath;
+        SaveStoredConfig(current);
+    }
+
+    public static TicketFieldVisibility LoadTicketFields()
+        => ReadStoredConfigOrDefault().TicketFields?.Clone() ?? TicketFieldVisibility.Default;
+
+    public static void SaveTicketFields(TicketFieldVisibility fields)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        StoredConfig current = ReadStoredConfigOrDefault();
+        current.TicketFields = fields.Clone();
+        SaveStoredConfig(current);
+    }
+
+    private static StoredConfig ReadStoredConfigOrDefault()
+    {
+        foreach (string path in GetReadCandidates())
+        {
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+                StoredConfig? cfg = JsonSerializer.Deserialize<StoredConfig>(File.ReadAllText(path));
+                if (cfg is not null)
+                {
+                    return cfg;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            {
+                AppLogger.Warn("Config", $"No se pudo leer '{path}': {ex.Message}");
+            }
+        }
+        return new StoredConfig();
+    }
+
+    private static void SaveStoredConfig(StoredConfig payload)
+    {
         string targetPath = ConfigFilePath;
         try
         {
-            WriteConfigFile(targetPath, settings);
+            WritePayloadFile(targetPath, payload);
         }
         catch (UnauthorizedAccessException)
         {
             string fallback = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PesajeProCamion", "appsettings.json");
-            WriteConfigFile(fallback, settings);
+            WritePayloadFile(fallback, payload);
         }
     }
 
@@ -91,26 +142,13 @@ public sealed class AppConfigStore
         yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PesajeProCamion", "appsettings.json");
     }
 
-    private static void WriteConfigFile(string path, DatabaseSettings settings)
+    private static void WritePayloadFile(string path, StoredConfig payload)
     {
         string? dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrWhiteSpace(dir))
         {
             Directory.CreateDirectory(dir);
         }
-
-        var payload = new StoredConfig
-        {
-            DataSource = settings.DataSource,
-            Port = settings.Port,
-            DatabasePath = settings.DatabasePath,
-            UserId = settings.UserId,
-            Password = settings.Password,
-            Charset = settings.Charset,
-            Dialect = settings.Dialect,
-            ConnectionTimeout = settings.ConnectionTimeout,
-            RawNetworkPath = settings.RawNetworkPath
-        };
         File.WriteAllText(path, JsonSerializer.Serialize(payload, JsonOptions));
     }
 
@@ -125,5 +163,6 @@ public sealed class AppConfigStore
         public int Dialect { get; set; } = 3;
         public int ConnectionTimeout { get; set; } = 10;
         public string? RawNetworkPath { get; set; }
+        public TicketFieldVisibility? TicketFields { get; set; }
     }
 }

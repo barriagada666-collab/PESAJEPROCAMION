@@ -55,11 +55,13 @@ public sealed class TicketEditorDialog : Form
 
     private readonly NumericUpDown _numBruto = new() { Maximum = 200_000, ThousandsSeparator = true };
     private readonly NumericUpDown _numTara = new() { Maximum = 200_000, ThousandsSeparator = true };
-    private readonly NumericUpDown _numNeto = new() { Maximum = 200_000, ThousandsSeparator = true, ReadOnly = true };
+    private readonly NumericUpDown _numNeto = new() { Maximum = 200_000, ThousandsSeparator = true };
+    private readonly CheckBox _chkAutoNeto = new();
     private readonly CheckBox _chkTaraReg = new();
     private readonly CheckBox _chkAnulado = new();
     private readonly TextBox _txtObs1 = new() { MaxLength = 120 };
     private readonly TextBox _txtObs2 = new() { MaxLength = 120 };
+    private bool _suppressNetoSync;
 
     public TicketEditorDialog(AppServices services, TicketEditorMode mode, Pesaje? source = null)
     {
@@ -259,16 +261,28 @@ public sealed class TicketEditorDialog : Form
         y += 40;
         AddRowControl(grpData, "Bruto (kg) *", _numBruto, 14, y, 120);
         AddRowControl(grpData, "Tara (kg) *", _numTara, 250, y, 120);
-        AddRowControl(grpData, "Neto (kg)", _numNeto, 486, y, 130);
+        AddRowControl(grpData, "Neto (kg) *", _numNeto, 486, y, 130);
         _numBruto.ValueChanged += (_, _) => RecalcNeto();
         _numTara.ValueChanged += (_, _) => RecalcNeto();
+        _numNeto.ValueChanged += (_, _) =>
+        {
+            if (!_suppressNetoSync)
+            {
+                _chkAutoNeto.Checked = false;
+            }
+        };
 
         y += 36;
-        _chkTaraReg.Text = "Tara Registrada"; _chkTaraReg.Location = new Point(114, y); _chkTaraReg.AutoSize = true;
-        _chkAnulado.Text = "Ticket Anulado"; _chkAnulado.Location = new Point(280, y); _chkAnulado.AutoSize = true;
+        _chkAutoNeto.Text = "Auto-calcular Neto (|Bruto - Tara|)";
+        _chkAutoNeto.Location = new Point(114, y);
+        _chkAutoNeto.AutoSize = true;
+        _chkAutoNeto.Checked = true;
+        _chkAutoNeto.CheckedChanged += (_, _) => { if (_chkAutoNeto.Checked) RecalcNeto(); };
+        _chkTaraReg.Text = "Tara Registrada"; _chkTaraReg.Location = new Point(360, y); _chkTaraReg.AutoSize = true;
+        _chkAnulado.Text = "Ticket Anulado"; _chkAnulado.Location = new Point(510, y); _chkAnulado.AutoSize = true;
         _chkAnulado.Visible = _mode is TicketEditorMode.CreateNew or TicketEditorMode.EditHistorical;
         _chkAnulado.CheckedChanged += (_, _) => RecalcNeto();
-        grpData.Controls.AddRange([_chkTaraReg, _chkAnulado]);
+        grpData.Controls.AddRange([_chkAutoNeto, _chkTaraReg, _chkAnulado]);
 
         y += 32;
         AddRowControl(grpData, "Observación 1", _txtObs1, 14, y, 610);
@@ -317,23 +331,45 @@ public sealed class TicketEditorDialog : Form
         _txtHoraIng.Text = string.IsNullOrWhiteSpace(_pesaje.HoraIngreso) ? DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture) : _pesaje.HoraIngreso;
         _dtFechaSal.Value = _pesaje.FechaSalida > DateTime.MinValue ? _pesaje.FechaSalida : DateTime.Today;
         _txtHoraSal.Text = string.IsNullOrWhiteSpace(_pesaje.HoraSalida) ? DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture) : _pesaje.HoraSalida;
-        _numBruto.Value = Math.Clamp(_pesaje.Bruto, 0, 200_000);
-        _numTara.Value = Math.Clamp(_pesaje.Tara, 0, 200_000);
+        _suppressNetoSync = true;
+        try
+        {
+            _numBruto.Value = Math.Clamp(_pesaje.Bruto, 0, 200_000);
+            _numTara.Value = Math.Clamp(_pesaje.Tara, 0, 200_000);
+            int autoNeto = WeighingCalculator.CalcularNeto((int)_numBruto.Value, (int)_numTara.Value);
+            bool hasManualNeto = _mode == TicketEditorMode.EditHistorical && !_pesaje.Anulado && _pesaje.Neto != autoNeto;
+            _chkAutoNeto.Checked = !hasManualNeto;
+            _numNeto.Value = _pesaje.Anulado ? 0 : Math.Clamp(hasManualNeto ? _pesaje.Neto : autoNeto, 0, 200_000);
+        }
+        finally
+        {
+            _suppressNetoSync = false;
+        }
         _chkTaraReg.Checked = _pesaje.TaraRegistrada;
         _chkAnulado.Checked = _pesaje.Anulado;
         _txtObs1.Text = _pesaje.Observacion1;
         _txtObs2.Text = _pesaje.Observacion2;
-        RecalcNeto();
     }
 
     private void RecalcNeto()
     {
-        if (_mode == TicketEditorMode.EditInProcess || _chkCrearEnProceso.Checked || _chkAnulado.Checked)
+        _suppressNetoSync = true;
+        try
         {
-            _numNeto.Value = 0;
-            return;
+            if (_mode == TicketEditorMode.EditInProcess || _chkCrearEnProceso.Checked || _chkAnulado.Checked)
+            {
+                _numNeto.Value = 0;
+                return;
+            }
+            if (_chkAutoNeto.Checked)
+            {
+                _numNeto.Value = WeighingCalculator.CalcularNeto((int)_numBruto.Value, (int)_numTara.Value);
+            }
         }
-        _numNeto.Value = WeighingCalculator.CalcularNeto((int)_numBruto.Value, (int)_numTara.Value);
+        finally
+        {
+            _suppressNetoSync = false;
+        }
     }
 
     private async Task InitializeFolioStateAsync()
@@ -400,15 +436,16 @@ public sealed class TicketEditorDialog : Form
 
         int bruto = (int)_numBruto.Value;
         int tara = (int)_numTara.Value;
+        int neto = (int)_numNeto.Value;
         bool enProcesoMode = _mode == TicketEditorMode.EditInProcess || (_mode == TicketEditorMode.CreateNew && _chkCrearEnProceso.Checked);
         if (enProcesoMode && bruto <= 0 && tara <= 0)
         {
             MessageBox.Show(this, "Un ticket En Proceso requiere al menos peso Bruto o Tara mayor a cero.", "Validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        if (!enProcesoMode && (bruto <= 0 || tara <= 0))
+        if (!enProcesoMode && !_chkAnulado.Checked && bruto <= 0 && tara <= 0 && neto <= 0)
         {
-            MessageBox.Show(this, "Un ticket completado requiere Bruto y Tara mayores a 0 kg.", "Validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, "Ingrese al menos Bruto, Tara o Neto mayor a 0 kg.", "Validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -435,6 +472,7 @@ public sealed class TicketEditorDialog : Form
         _pesaje.HoraSalida = string.IsNullOrWhiteSpace(_txtHoraSal.Text) ? DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture) : _txtHoraSal.Text.Trim();
         _pesaje.Bruto = bruto;
         _pesaje.Tara = tara;
+        _pesaje.Neto = _chkAnulado.Checked ? 0 : neto;
         _pesaje.TaraRegistrada = _chkTaraReg.Checked;
         _pesaje.Anulado = _chkAnulado.Checked;
         _pesaje.Observacion1 = _txtObs1.Text.Trim();
@@ -448,11 +486,11 @@ public sealed class TicketEditorDialog : Form
             {
                 case TicketEditorMode.CreateNew:
                     _pesaje.FolioPesaje = _chkAutoFolio.Checked ? 0 : (int)_numFolio.Value;
-                    _pesaje.FolioPesaje = await _services.Weighing.CreateManualTicketAsync(_pesaje, _chkCrearEnProceso.Checked, actorId);
+                    _pesaje.FolioPesaje = await _services.Weighing.CreateManualTicketAsync(_pesaje, _chkCrearEnProceso.Checked, actorId, preserveManualNeto: true);
                     break;
 
                 case TicketEditorMode.EditHistorical:
-                    await _services.Weighing.ModificarPesajeAsync(_pesaje, actorId);
+                    await _services.Weighing.ModificarPesajeAsync(_pesaje, actorId, preserveManualNeto: true);
                     break;
 
                 case TicketEditorMode.EditInProcess:

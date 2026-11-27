@@ -87,6 +87,7 @@ public sealed class UiSmokeAndAuditTests
                     new UsuariosForm(services),
                     new TicketViewerDialog(services, samplePesaje),
                     new TicketEditorDialog(services, TicketEditorMode.CreateNew),
+                    new SplitTicketDialog(services, samplePesaje),
                     new ModPesajeDialog(services, samplePesaje),
                     new ClientesForm(services),
                     new CamionesForm(services),

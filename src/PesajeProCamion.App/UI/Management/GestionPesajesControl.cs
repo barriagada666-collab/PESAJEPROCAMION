@@ -104,6 +104,7 @@ public sealed class GestionPesajesControl : UserControl
         ToolStripButton btnNuevo = AppTheme.CreateToolButton(AppIcon.Add, "Nuevo Ticket", "Crear nuevo ticket manual sin conflicto de folio", AppTheme.AccentEmerald);
         ToolStripButton btnVisualizar = AppTheme.CreateToolButton(AppIcon.ViewTicket, "Visualizar", "Abrir vista visual del ticket seleccionado", AppTheme.NavyPrimary);
         ToolStripButton btnModificar = AppTheme.CreateToolButton(AppIcon.EditTicket, "Modificar", "Editar datos del ticket o en proceso", AppTheme.NavyDark);
+        ToolStripButton btnDividir = AppTheme.CreateToolButton(AppIcon.Split, "Dividir", "Dividir ticket en 2 folios asignando nuevo folio automático", AppTheme.NavyPrimary);
         ToolStripButton btnCompletar = AppTheme.CreateToolButton(AppIcon.Check, "Completar", "Cerrar ticket En Proceso registrando peso faltante", AppTheme.AccentEmerald);
         ToolStripButton btnAnular = AppTheme.CreateToolButton(AppIcon.Delete, "Anular", "Alternar anulación o retirar de tránsito", AppTheme.AccentDanger);
         ToolStripButton btnImprimir = AppTheme.CreateToolButton(AppIcon.Print, "Imprimir", "Elegir copias, previsualizar e imprimir ticket", AppTheme.NavyPrimary);
@@ -116,6 +117,7 @@ public sealed class GestionPesajesControl : UserControl
         btnNuevo.Click += async (_, _) => await CreateTicketAsync();
         btnVisualizar.Click += async (_, _) => await ViewSelectedTicketAsync();
         btnModificar.Click += async (_, _) => await ModifySelectedAsync();
+        btnDividir.Click += async (_, _) => await SplitSelectedAsync();
         btnCompletar.Click += async (_, _) => await CompleteInProcessAsync();
         btnAnular.Click += async (_, _) => await ToggleAnularSelectedAsync();
         btnImprimir.Click += (_, _) => PrintSelected();
@@ -126,7 +128,7 @@ public sealed class GestionPesajesControl : UserControl
 
         toolbar.Items.AddRange([
             btnConsultar, new ToolStripSeparator(),
-            btnNuevo, btnVisualizar, btnModificar, btnCompletar, btnAnular, new ToolStripSeparator(),
+            btnNuevo, btnVisualizar, btnModificar, btnDividir, btnCompletar, btnAnular, new ToolStripSeparator(),
             btnImprimir, btnPdf, btnExcel, btnDbf, btnCsv
         ]);
 
@@ -231,6 +233,9 @@ public sealed class GestionPesajesControl : UserControl
         var mMod = new ToolStripMenuItem("Modificar Ticket Seleccionado...", IconCatalog.Get(AppIcon.EditTicket, 16, AppTheme.NavyDark));
         mMod.Click += async (_, _) => await ModifySelectedAsync();
 
+        var mSplit = new ToolStripMenuItem("Dividir Ticket en 2...", IconCatalog.Get(AppIcon.Split, 16, AppTheme.NavyPrimary));
+        mSplit.Click += async (_, _) => await SplitSelectedAsync();
+
         var mComplete = new ToolStripMenuItem("Completar Salida (En Proceso)...", IconCatalog.Get(AppIcon.Check, 16, AppTheme.AccentEmerald));
         mComplete.Click += async (_, _) => await CompleteInProcessAsync();
 
@@ -275,6 +280,9 @@ public sealed class GestionPesajesControl : UserControl
             bool isProc = sel?.EsEnProceso ?? false;
             mView.Enabled = hasSel;
             mMod.Enabled = hasSel && PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ModificarRegistro);
+            mSplit.Enabled = hasSel && !isProc && !(sel?.Pesaje.Anulado ?? true) && (sel?.Pesaje.Neto ?? 0) >= 2 &&
+                             PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro) &&
+                             PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ModificarRegistro);
             mNew.Enabled = PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro);
             mDup.Enabled = hasSel && PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro);
             mComplete.Enabled = hasSel && isProc && PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro);
@@ -287,7 +295,7 @@ public sealed class GestionPesajesControl : UserControl
         };
 
         cms.Items.AddRange([
-            mView, mNew, mMod, mComplete, mDup, mAnul, new ToolStripSeparator(),
+            mView, mNew, mMod, mSplit, mComplete, mDup, mAnul, new ToolStripSeparator(),
             mPrint, mPdfTicket, mExportXlsx, new ToolStripSeparator(),
             mFilterPat, mCopyFolio, mCopyPat, mRefresh
         ]);
@@ -386,6 +394,28 @@ public sealed class GestionPesajesControl : UserControl
         }
     }
 
+    private async Task SplitSelectedAsync()
+    {
+        TicketGridItem? sel = GetSelected();
+        if (sel is null) return;
+        if (sel.EsEnProceso || sel.Pesaje.Anulado)
+        {
+            MessageBox.Show(this, "Solo pueden dividirse tickets completados y activos (no En Proceso ni Anulados).", "Dividir Ticket", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        int neto = sel.Pesaje.Neto > 0 ? sel.Pesaje.Neto : Math.Abs(sel.Pesaje.Bruto - sel.Pesaje.Tara);
+        if (neto < 2)
+        {
+            MessageBox.Show(this, "El ticket seleccionado debe tener Neto de al menos 2 kg para dividirse en 2.", "Dividir Ticket", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        using var dlg = new SplitTicketDialog(_services, sel.Pesaje);
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+        {
+            await RefreshAsync();
+        }
+    }
+
     private async Task CompleteInProcessAsync()
     {
         TicketGridItem? sel = GetSelected();
@@ -476,7 +506,7 @@ public sealed class GestionPesajesControl : UserControl
         using var copDlg = new TicketCopiesDialog(_services.ConfigActual.NroCopiasTicket);
         if (copDlg.ShowDialog(this) != DialogResult.OK) return;
         using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(
-            sel.Pesaje, _services.BasculaActual, _services.ConfigActual, copDlg.Copies, IconCatalog.GetCorporateLogo());
+            sel.Pesaje, _services.BasculaActual, _services.ConfigActual, copDlg.Copies, IconCatalog.GetCorporateLogo(), _services.TicketFields, sel.EsEnProceso);
         using var prev = new PrintPreviewDialog { Document = doc, Width = 840, Height = 640 };
         prev.ShowDialog(this);
     }
@@ -487,7 +517,7 @@ public sealed class GestionPesajesControl : UserControl
         if (sel is null) return;
         using var sfd = new SaveFileDialog { Filter = "Documento PDF|*.pdf", FileName = $"Ticket_Folio_{sel.Pesaje.FolioPesaje}_{sel.Pesaje.Patente}.pdf" };
         if (sfd.ShowDialog(this) != DialogResult.OK) return;
-        TicketPrinterService.ExportCommercialTicketToPdf(sfd.FileName, sel.Pesaje, _services.BasculaActual, _services.ConfigActual, sel.EsEnProceso);
+        TicketPrinterService.ExportCommercialTicketToPdf(sfd.FileName, sel.Pesaje, _services.BasculaActual, _services.ConfigActual, sel.EsEnProceso, _services.TicketFields);
         MessageBox.Show(this, $"Ticket exportado a PDF:\r\n{sfd.FileName}", "Exportar PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 

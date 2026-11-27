@@ -12,40 +12,94 @@ namespace PesajeProCamion.Hardware.Printing;
 /// <summary>Motor de generación e impresión de tickets comerciales y boletos MOP (gráfico, PDF y texto RAW).</summary>
 public static partial class TicketPrinterService
 {
+    /// <summary>Construye la lista ordenada de campos visibles del ticket comercial según preferencias activas.</summary>
+    public static IReadOnlyList<(string Label, string Value)> BuildVisibleFieldRows(Pesaje p, TicketFieldVisibility? visibility = null)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+        TicketFieldVisibility v = visibility ?? TicketFieldVisibility.Default;
+        var rows = new List<(string, string)>(8);
+
+        if (v.MostrarPatente)
+        {
+            string pat = string.IsNullOrWhiteSpace(p.Acoplado) ? p.Patente : $"{p.Patente}   (Acoplado: {p.Acoplado})";
+            rows.Add(("PATENTE / ACOPLADO", string.IsNullOrWhiteSpace(pat) ? "-" : pat));
+        }
+        if (v.MostrarCliente)
+        {
+            string val = $"{p.Cliente} - {p.NombreCliente}".Trim(' ', '-');
+            rows.Add(("CLIENTE", string.IsNullOrWhiteSpace(val) ? "-" : val));
+        }
+        if (v.MostrarProducto)
+        {
+            string val = $"{p.Producto} - {p.NombreProducto}".Trim(' ', '-');
+            rows.Add(("PRODUCTO", string.IsNullOrWhiteSpace(val) ? "-" : val));
+        }
+        if (v.MostrarOrigen)
+        {
+            string val = $"{p.Origen} - {p.NombreOrigen}".Trim(' ', '-');
+            rows.Add(("ORIGEN / PROVEEDOR", string.IsNullOrWhiteSpace(val) ? "-" : val));
+        }
+        if (v.MostrarDestino)
+        {
+            string val = $"{p.Destino} - {p.NombreDestino}".Trim(' ', '-');
+            rows.Add(("DESTINO", string.IsNullOrWhiteSpace(val) ? "-" : val));
+        }
+        if (v.MostrarTransportista)
+        {
+            string val = $"{p.Transportista} - {p.NombreTransportista}".Trim(' ', '-');
+            rows.Add(("TRANSPORTISTA", string.IsNullOrWhiteSpace(val) ? "-" : val));
+        }
+        if (v.MostrarChofer)
+        {
+            string val = $"{p.Chofer} - {p.NombreChofer}".Trim(' ', '-');
+            rows.Add(("CHOFER", string.IsNullOrWhiteSpace(val) ? "-" : val));
+        }
+        if (v.MostrarGuiaDespacho)
+        {
+            rows.Add(("GUÍA DE DESPACHO", string.IsNullOrWhiteSpace(p.GuiaDespacho) ? "-" : p.GuiaDespacho));
+        }
+
+        return rows;
+    }
+
     public static void ExportCommercialTicketToPdf(
         string filePath,
         Pesaje p,
         BasculaInfo bascula,
         ConfiguracionSistema? cfg = null,
-        bool isEnProceso = false)
+        bool isEnProceso = false,
+        TicketFieldVisibility? visibility = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         ArgumentNullException.ThrowIfNull(p);
         ArgumentNullException.ThrowIfNull(bascula);
 
+        TicketFieldVisibility v = visibility ?? TicketFieldVisibility.Default;
         string company = string.IsNullOrWhiteSpace(bascula.NombreEmpresa) ? (cfg?.Titulo1 ?? "PESAJE DE CAMIONES") : bascula.NombreEmpresa;
         string companySub = string.IsNullOrWhiteSpace(bascula.Rut) ? bascula.Direccion : $"{bascula.Direccion}  |  RUT: {bascula.Rut}";
-        string badge = p.Anulado ? "ANULADO" : (isEnProceso ? "EN PROCESO" : "COMPLETADO");
+        string badge = TicketCustomizationHelper.FormatTipoPesajeBadge(p.TipoPesaje, p.Anulado, isEnProceso);
 
-        (string Label, string Value)[] details =
-        [
-            ("Folio Pesaje:", $"#{p.FolioPesaje}"),
-            ("Tipo Pesaje:", p.TipoPesaje.ToString()),
-            ("Patente / Acoplado:", string.IsNullOrWhiteSpace(p.Acoplado) ? p.Patente : $"{p.Patente}  /  {p.Acoplado}"),
-            ("Cliente:", $"{p.Cliente} - {p.NombreCliente}".Trim(' ', '-')),
-            ("Producto:", $"{p.Producto} - {p.NombreProducto}".Trim(' ', '-')),
-            ("Origen / Proveedor:", $"{p.Origen} - {p.NombreOrigen}".Trim(' ', '-')),
-            ("Destino:", $"{p.Destino} - {p.NombreDestino}".Trim(' ', '-')),
-            ("Transportista:", $"{p.Transportista} - {p.NombreTransportista}".Trim(' ', '-')),
-            ("Chofer:", $"{p.Chofer} - {p.NombreChofer}".Trim(' ', '-')),
-            ("Guía Despacho:", string.IsNullOrWhiteSpace(p.GuiaDespacho) ? "-" : p.GuiaDespacho)
-        ];
+        var details = new List<(string Label, string Value)>
+        {
+            ("Folio Pesaje:", $"#{p.FolioPesaje:D6}   ({TicketCustomizationHelper.FormatEstadoTicket(p.Anulado, isEnProceso)})")
+        };
+        foreach ((string lbl, string val) in BuildVisibleFieldRows(p, v))
+        {
+            details.Add(($"{lbl}:", val));
+        }
 
-        string ent = $"{p.FechaIngreso:dd/MM/yyyy} {p.HoraIngreso}  |  Operador: {p.NombreUsuarioIngreso}".Trim();
-        string sal = isEnProceso
-            ? "Vehículo actualmente EN TRÁNSITO (pendiente 2° pesaje)"
-            : $"{p.FechaSalida:dd/MM/yyyy} {p.HoraSalida}  |  Operador: {p.NombreUsuarioSalida}".Trim();
-        string obs = $"{p.Observacion1} {p.Observacion2}".Trim();
+        string ent = v.MostrarTiemposOperador
+            ? $"{p.FechaIngreso:dd/MM/yyyy} {p.HoraIngreso}  |  Operador: {p.NombreUsuarioIngreso}".Trim()
+            : "(Oculto)";
+        string sal = v.MostrarTiemposOperador
+            ? (isEnProceso
+                ? "Vehículo actualmente EN TRÁNSITO (pendiente 2° pesaje)"
+                : $"{p.FechaSalida:dd/MM/yyyy} {p.HoraSalida}  |  Operador: {p.NombreUsuarioSalida}".Trim())
+            : "(Oculto)";
+        string obsRaw = $"{p.Observacion1} {p.Observacion2}".Trim();
+        string obs = v.MostrarObservaciones
+            ? (string.IsNullOrWhiteSpace(obsRaw) ? "-" : obsRaw)
+            : "(Oculto)";
 
         PdfDocumentWriter.WriteSingleTicketPdf(
             filePath,
@@ -59,13 +113,20 @@ public static partial class TicketPrinterService
             isEnProceso ? 0 : p.Neto,
             ent,
             sal,
-            string.IsNullOrWhiteSpace(obs) ? "-" : obs);
+            obs);
     }
-    public static string BuildRawTicketText(Pesaje p, BasculaInfo bascula, ConfiguracionSistema? cfg = null)
+
+    public static string BuildRawTicketText(
+        Pesaje p,
+        BasculaInfo bascula,
+        ConfiguracionSistema? cfg = null,
+        TicketFieldVisibility? visibility = null,
+        bool isEnProceso = false)
     {
         ArgumentNullException.ThrowIfNull(p);
         ArgumentNullException.ThrowIfNull(bascula);
 
+        TicketFieldVisibility v = visibility ?? TicketFieldVisibility.Default;
         var sb = new StringBuilder();
         string company = string.IsNullOrWhiteSpace(bascula.NombreEmpresa) ? (cfg?.Titulo1 ?? "PESAJE DE CAMIONES") : bascula.NombreEmpresa;
         sb.AppendLine("============================================================");
@@ -74,27 +135,26 @@ public static partial class TicketPrinterService
         {
             sb.AppendLine($"  {bascula.Direccion}");
         }
-        sb.AppendLine("  TICKET DE PESAJE COMERCIAL");
+        sb.AppendLine($"  TICKET DE PESAJE COMERCIAL  [{TicketCustomizationHelper.FormatTipoPesajeBadge(p.TipoPesaje, p.Anulado, isEnProceso)}]");
         sb.AppendLine("============================================================");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"FOLIO       : {p.FolioPesaje:D6}       ESTADO : {(p.Anulado ? "ANULADO" : "ACTIVO")}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"PATENTE     : {p.Patente,-10}   ACOPLADO : {p.Acoplado}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CLIENTE     : {p.NombreCliente}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"PRODUCTO    : {p.NombreProducto}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"ORIGEN      : {p.NombreOrigen}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"DESTINO     : {p.NombreDestino}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"TRANSPORT.  : {p.NombreTransportista}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CHOFER      : {p.NombreChofer}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"GUIA DESP.  : {p.GuiaDespacho}");
-        sb.AppendLine("------------------------------------------------------------");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"ENTRADA     : {p.FechaIngreso:dd/MM/yyyy} {p.HoraIngreso}   OP: {p.NombreUsuarioIngreso}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"SALIDA      : {p.FechaSalida:dd/MM/yyyy} {p.HoraSalida}   OP: {p.NombreUsuarioSalida}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"FOLIO       : {p.FolioPesaje:D6}       ESTADO : {TicketCustomizationHelper.FormatEstadoTicket(p.Anulado, isEnProceso)}");
+        foreach ((string lbl, string val) in BuildVisibleFieldRows(p, v))
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"{lbl,-18}: {val}");
+        }
+        if (v.MostrarTiemposOperador)
+        {
+            sb.AppendLine("------------------------------------------------------------");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"ENTRADA     : {p.FechaIngreso:dd/MM/yyyy} {p.HoraIngreso}   OP: {p.NombreUsuarioIngreso}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"SALIDA      : {(isEnProceso ? "EN TRÁNSITO" : $"{p.FechaSalida:dd/MM/yyyy} {p.HoraSalida}")}   OP: {(isEnProceso ? "-" : p.NombreUsuarioSalida)}");
+        }
         sb.AppendLine("------------------------------------------------------------");
         sb.AppendLine(CultureInfo.InvariantCulture, $"PESO BRUTO  : {p.Bruto,10:N0} Kg");
         sb.AppendLine(CultureInfo.InvariantCulture, $"PESO TARA   : {p.Tara,10:N0} Kg {(p.TaraRegistrada ? "(TARA REG.)" : string.Empty)}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"PESO NETO   : {p.Neto,10:N0} Kg");
-        if (!string.IsNullOrWhiteSpace(p.Observacion1))
+        sb.AppendLine(CultureInfo.InvariantCulture, $"PESO NETO   : {(isEnProceso ? 0 : p.Neto),10:N0} Kg");
+        if (v.MostrarObservaciones && (!string.IsNullOrWhiteSpace(p.Observacion1) || !string.IsNullOrWhiteSpace(p.Observacion2)))
         {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"OBSERVAC.   : {p.Observacion1}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"OBSERVAC.   : {$"{p.Observacion1} {p.Observacion2}".Trim()}");
         }
         sb.AppendLine("============================================================");
         return sb.ToString();
@@ -136,14 +196,16 @@ public static partial class TicketPrinterService
         BasculaInfo bascula,
         ConfiguracionSistema? cfg = null,
         short copies = 1,
-        Image? corporateLogo = null)
+        Image? corporateLogo = null,
+        TicketFieldVisibility? visibility = null,
+        bool isEnProceso = false)
     {
         ArgumentNullException.ThrowIfNull(p);
         ArgumentNullException.ThrowIfNull(bascula);
 
         var doc = new PrintDocument { DocumentName = $"Ticket_Pesaje_{p.FolioPesaje}" };
         doc.PrinterSettings.Copies = Math.Clamp(copies, (short)1, (short)20);
-        doc.PrintPage += (_, e) => RenderTicketPage(e, p, bascula, cfg, corporateLogo);
+        doc.PrintPage += (_, e) => RenderTicketPage(e, p, bascula, cfg, corporateLogo, visibility, isEnProceso);
         return doc;
     }
 
@@ -168,7 +230,14 @@ public static partial class TicketPrinterService
         return doc;
     }
 
-    private static void RenderTicketPage(PrintPageEventArgs e, Pesaje p, BasculaInfo bascula, ConfiguracionSistema? cfg, Image? corporateLogo)
+    private static void RenderTicketPage(
+        PrintPageEventArgs e,
+        Pesaje p,
+        BasculaInfo bascula,
+        ConfiguracionSistema? cfg,
+        Image? corporateLogo,
+        TicketFieldVisibility? visibility = null,
+        bool isEnProceso = false)
     {
         Graphics? g = e.Graphics;
         if (g is null)
@@ -176,6 +245,7 @@ public static partial class TicketPrinterService
             return;
         }
 
+        TicketFieldVisibility v = visibility ?? TicketFieldVisibility.Default;
         using var fTitle = new Font("Segoe UI", 14.5f, FontStyle.Bold);
         using var fComp = new Font("Segoe UI", 10.5f, FontStyle.Bold);
         using var fSub = new Font("Segoe UI", 9.5f, FontStyle.Bold);
@@ -192,18 +262,27 @@ public static partial class TicketPrinterService
 
         if (corporateLogo is not null)
         {
-            g.DrawImage(corporateLogo, new RectangleF(left + width - 110, y, 105, 56));
+            g.DrawImage(corporateLogo, new RectangleF(left, y, 105, 56));
         }
 
-        using var centerFmt = new StringFormat { Alignment = StringAlignment.Center };
-        string estado = p.Anulado ? " [ANULADO]" : string.Empty;
-        g.DrawString($"TICKET DE PESAJE COMERCIAL{estado}", fTitle, tealBrush, new RectangleF(left, y, width, 28), centerFmt);
-        y += 32;
+        float titleLeft = corporateLogo is not null ? left + 118 : left;
+        g.DrawString("TICKET DE PESAJE COMERCIAL", fTitle, tealBrush, titleLeft, y);
+
+        string tipoBadge = TicketCustomizationHelper.FormatTipoPesajeBadge(p.TipoPesaje, p.Anulado, isEnProceso);
+        Color badgeBg = p.Anulado
+            ? Color.FromArgb(186, 42, 42)
+            : (isEnProceso ? Color.FromArgb(198, 118, 14) : Color.FromArgb(18, 148, 91));
+        using var badgeBrush = new SolidBrush(badgeBg);
+        using var badgeFmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        var badgeRect = new RectangleF(left + width - 205, y + 2, 205, 26);
+        g.FillRectangle(badgeBrush, badgeRect);
+        g.DrawString(tipoBadge, fSub, Brushes.White, badgeRect, badgeFmt);
+        y += 28;
 
         string company = string.IsNullOrWhiteSpace(bascula.NombreEmpresa) ? (cfg?.Titulo1 ?? "PESAJE DE CAMIONES") : bascula.NombreEmpresa;
-        g.DrawString(company, fComp, Brushes.Black, left, y);
+        g.DrawString(company, fComp, Brushes.Black, titleLeft, y);
         y += 18;
-        g.DrawString($"{bascula.Direccion}   {(string.IsNullOrWhiteSpace(bascula.Rut) ? string.Empty : "|  RUT: " + bascula.Rut)}", fBody, Brushes.DimGray, left, y);
+        g.DrawString($"{bascula.Direccion}   {(string.IsNullOrWhiteSpace(bascula.Rut) ? string.Empty : "|  RUT: " + bascula.Rut)}", fBody, Brushes.DimGray, titleLeft, y);
         y += 20;
         g.DrawLine(pen, left, y, left + width, y);
         y += 10;
@@ -212,26 +291,14 @@ public static partial class TicketPrinterService
         float padX = 14;
         y += 10;
 
-        g.DrawString($"FOLIO PESAJE :  {p.FolioPesaje}", fBold, tealBrush, left + padX, y);
-        g.DrawString($"FECHA : {DateTime.Now:dd-MM-yyyy}", fBody, Brushes.Black, left + width * 0.65f, y);
-        y += 20;
-        g.DrawString($"TIPO PESAJE  :  {p.TipoPesaje}", fBody, Brushes.Black, left + padX, y);
-        g.DrawString($"HORA  : {DateTime.Now:HH:mm}", fBody, Brushes.Black, left + width * 0.65f, y);
-        y += 24;
+        g.DrawString($"FOLIO PESAJE :  {p.FolioPesaje:D6}", fBold, tealBrush, left + padX, y);
+        g.DrawString($"ESTADO : {TicketCustomizationHelper.FormatEstadoTicket(p.Anulado, isEnProceso)}", fBold, Brushes.Black, left + width * 0.58f, y);
+        y += 22;
 
-        (string Lbl, string Val)[] details =
-        [
-            ("PATENTE", string.IsNullOrWhiteSpace(p.Acoplado) ? p.Patente : $"{p.Patente}   ACOPLADO: {p.Acoplado}"),
-            ("CLIENTE", $"{p.Cliente} - {p.NombreCliente}".Trim(' ', '-')),
-            ("PRODUCTO", $"{p.Producto} - {p.NombreProducto}".Trim(' ', '-')),
-            ("CHOFER", $"{p.Chofer} {p.NombreChofer}".Trim()),
-            ("GUIA DESPACHO", p.GuiaDespacho),
-            ("ORIGEN / DEST.", $"{p.NombreOrigen} -> {p.NombreDestino}".Trim(' ', '-', '>'))
-        ];
-        foreach ((string lbl, string val) in details)
+        foreach ((string lbl, string val) in BuildVisibleFieldRows(p, v))
         {
-            g.DrawString(lbl, fBody, Brushes.DimGray, left + padX + 16, y);
-            g.DrawString(val, fBody, Brushes.Black, left + padX + 150, y);
+            g.DrawString(lbl, fBody, Brushes.DimGray, left + padX + 12, y);
+            g.DrawString(val, fBody, Brushes.Black, left + padX + 168, y);
             y += 20;
         }
 
@@ -239,34 +306,40 @@ public static partial class TicketPrinterService
         g.DrawLine(thinPen, left, y, left + width, y);
         y += 14;
 
-        // Recuadro centrado BRUTO / TARA / NETO igual que boleto clásico moderno
-        float wBoxW = 280;
+        float wBoxW = 290;
         float wBoxX = left + (width - wBoxW) / 2f;
         g.DrawRectangle(pen, wBoxX, y, wBoxW, 86);
         DrawWeightLine(g, fBig, wBoxX + 16, y + 10, wBoxW - 32, "BRUTO", p.Bruto);
         DrawWeightLine(g, fBig, wBoxX + 16, y + 34, wBoxW - 32, "TARA", p.Tara);
-        DrawWeightLine(g, fBig, wBoxX + 16, y + 58, wBoxW - 32, "NETO", p.Neto, tealBrush);
+        DrawWeightLine(g, fBig, wBoxX + 16, y + 58, wBoxW - 32, "NETO", isEnProceso ? 0 : p.Neto, tealBrush);
         y += 100;
 
-        g.DrawLine(thinPen, left, y, left + width, y);
-        y += 12;
+        if (v.MostrarTiemposOperador)
+        {
+            g.DrawLine(thinPen, left, y, left + width, y);
+            y += 12;
 
-        float colMid = left + width / 2f;
-        g.DrawString("ENTRADA", fSub, tealBrush, left + padX, y);
-        g.DrawString("SALIDA", fSub, tealBrush, colMid, y);
-        y += 20;
-        g.DrawString($"FECHA     :  {p.FechaIngreso:dd-MM-yyyy}", fBody, Brushes.Black, left + padX + 12, y);
-        g.DrawString($"FECHA     :  {p.FechaSalida:dd-MM-yyyy}", fBody, Brushes.Black, colMid + 12, y);
-        y += 18;
-        g.DrawString($"HORA      :  {p.HoraIngreso}", fBody, Brushes.Black, left + padX + 12, y);
-        g.DrawString($"HORA      :  {p.HoraSalida}", fBody, Brushes.Black, colMid + 12, y);
-        y += 18;
-        g.DrawString($"OPERADOR  :  {p.NombreUsuarioIngreso}", fBody, Brushes.Black, left + padX + 12, y);
-        g.DrawString($"OPERADOR  :  {p.NombreUsuarioSalida}", fBody, Brushes.Black, colMid + 12, y);
-        y += 26;
+            float colMid = left + width / 2f;
+            g.DrawString("ENTRADA", fSub, tealBrush, left + padX, y);
+            g.DrawString("SALIDA", fSub, tealBrush, colMid, y);
+            y += 20;
+            g.DrawString($"FECHA     :  {p.FechaIngreso:dd-MM-yyyy}", fBody, Brushes.Black, left + padX + 12, y);
+            g.DrawString($"FECHA     :  {(isEnProceso ? "-" : $"{p.FechaSalida:dd-MM-yyyy}")}", fBody, Brushes.Black, colMid + 12, y);
+            y += 18;
+            g.DrawString($"HORA      :  {p.HoraIngreso}", fBody, Brushes.Black, left + padX + 12, y);
+            g.DrawString($"HORA      :  {(isEnProceso ? "-" : p.HoraSalida)}", fBody, Brushes.Black, colMid + 12, y);
+            y += 18;
+            g.DrawString($"OPERADOR  :  {p.NombreUsuarioIngreso}", fBody, Brushes.Black, left + padX + 12, y);
+            g.DrawString($"OPERADOR  :  {(isEnProceso ? "-" : p.NombreUsuarioSalida)}", fBody, Brushes.Black, colMid + 12, y);
+            y += 24;
+        }
 
-        g.DrawString($"OBSERVACIONES :  {$"{p.Observacion1} {p.Observacion2}".Trim()}", fBody, Brushes.Black, left + padX, y);
-        y += 26;
+        if (v.MostrarObservaciones)
+        {
+            string obs = $"{p.Observacion1} {p.Observacion2}".Trim();
+            g.DrawString($"OBSERVACIONES :  {(string.IsNullOrWhiteSpace(obs) ? "-" : obs)}", fBody, Brushes.Black, left + padX, y);
+            y += 24;
+        }
 
         g.DrawRectangle(pen, left, boxTop, width, y - boxTop);
         e.HasMorePages = false;

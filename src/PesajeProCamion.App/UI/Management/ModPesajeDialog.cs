@@ -104,7 +104,7 @@ public sealed class ModPesajeDialog : Form
         AppTheme.StyleSecondaryButton(btnPrint, AppIcon.Print, "Imprimir", "Imprimir ticket");
         btnPrint.Click += (_, _) =>
         {
-            using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(_pesaje, _services.BasculaActual, _services.ConfigActual);
+            using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(_pesaje, _services.BasculaActual, _services.ConfigActual, 1, IconCatalog.GetCorporateLogo(), _services.TicketFields);
             using var prev = new PrintPreviewDialog { Document = doc, Width = 780, Height = 580 };
             prev.ShowDialog(this);
         };

@@ -469,7 +469,12 @@ public sealed class WeighingRepository
         return await CheckFolioAvailabilityInternalAsync(conn, null, caps, folioPesaje, ignoreTransitoFolio, ignorePesajeFolio, ct).ConfigureAwait(false);
     }
 
-    public async Task<int> CreateManualTicketAsync(Pesaje ticket, bool crearEnProceso, short usuarioId, CancellationToken ct = default)
+    public async Task<int> CreateManualTicketAsync(
+        Pesaje ticket,
+        bool crearEnProceso,
+        short usuarioId,
+        bool preserveManualNeto = false,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(ticket);
         DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
@@ -539,62 +544,70 @@ public sealed class WeighingRepository
                 return ticket.FolioPesaje;
             }
 
-            ticket.Neto = ticket.Anulado ? 0 : WeighingCalculator.CalcularNeto(ticket.Bruto, ticket.Tara);
-            await using var insCmd = new FbCommand("""
-                INSERT INTO DBPESAJES (
-                    FLPESAJE, PATENTE, ACOPLADO, FLPESAJEMOP, PRODUCTO, CLIENTE, ORIGEN, DESTINO, GDESPACHO,
-                    NETOINF, FECHAING, HORAING, FECHASAL, HORASAL, FECHAMOD, HORAMOD,
-                    BRUTO, TARA, NETO, TMOP, LARGO, MAXBRUTO, ESTADOMOP, CHOFER, TRASPASO,
-                    OBSERVA1, OBSERVA2, TRANSP, TARAREG, TPESAJE, SAVEDTOSERVER,
-                    USUAING, USUASAL, USUAMOD, USUADEL, ANULADO)
-                VALUES (
-                    @FP, @PAT, @ACO, @FM, @PR, @CL, @OR, @DE, @GD,
-                    @NI, @FI, @HI, @FS, @HS, @FMOD, @HMOD,
-                    @BR, @TA, @NE, @TM, @LA, @MB, @EM, @CH, @TRS,
-                    @OB1, @OB2, @TR, @TRG, @TP, @SV,
-                    @UI, @US, @UM, @UD, @AN)
-                """, conn, tx);
-            AddParam(insCmd, "@FP", ticket.FolioPesaje);
-            AddParam(insCmd, "@PAT", ticket.Patente);
-            AddParam(insCmd, "@ACO", ticket.Acoplado);
-            AddParam(insCmd, "@FM", ticket.FolioPesajeMop);
-            AddParam(insCmd, "@PR", ticket.Producto.Trim());
-            AddParam(insCmd, "@CL", ticket.Cliente.Trim());
-            AddParam(insCmd, "@OR", ticket.Origen.Trim());
-            AddParam(insCmd, "@DE", ticket.Destino.Trim());
-            AddParam(insCmd, "@GD", ticket.GuiaDespacho.Trim());
-            AddParam(insCmd, "@NI", ticket.NetoInformado);
-            AddParam(insCmd, "@FI", ticket.FechaIngreso.Date);
-            AddParam(insCmd, "@HI", ticket.HoraIngreso);
-            AddParam(insCmd, "@FS", ticket.FechaSalida.Date);
-            AddParam(insCmd, "@HS", ticket.HoraSalida);
-            AddParam(insCmd, "@FMOD", DateTime.Today);
-            AddParam(insCmd, "@HMOD", DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture));
-            AddParam(insCmd, "@BR", ticket.Bruto);
-            AddParam(insCmd, "@TA", ticket.Tara);
-            AddParam(insCmd, "@NE", ticket.Neto);
-            AddParam(insCmd, "@TM", ticket.TipoMop);
-            AddParam(insCmd, "@LA", ticket.Largo);
-            AddParam(insCmd, "@MB", ticket.MaxBruto);
-            AddParam(insCmd, "@EM", ((short)ticket.EstadoMop).ToString(CultureInfo.InvariantCulture));
-            AddParam(insCmd, "@CH", ticket.Chofer.Trim());
-            AddParam(insCmd, "@TRS", ticket.Traspaso);
-            AddParam(insCmd, "@OB1", ticket.Observacion1.Trim());
-            AddParam(insCmd, "@OB2", ticket.Observacion2.Trim());
-            AddParam(insCmd, "@TR", ticket.Transportista.Trim());
-            AddParam(insCmd, "@TRG", ticket.TaraRegistrada ? "1" : "0");
-            AddParam(insCmd, "@TP", (short)ticket.TipoPesaje);
-            AddParam(insCmd, "@SV", ticket.SavedToServer);
-            AddParam(insCmd, "@UI", usuarioId);
-            AddParam(insCmd, "@US", usuarioId);
-            AddParam(insCmd, "@UM", usuarioId);
-            AddParam(insCmd, "@UD", ticket.Anulado ? usuarioId : (short)0);
-            AddParam(insCmd, "@AN", ticket.Anulado ? "1" : "0");
+            ticket.Neto = ticket.Anulado
+                ? 0
+                : (preserveManualNeto ? Math.Max(0, ticket.Neto) : WeighingCalculator.CalcularNeto(ticket.Bruto, ticket.Tara));
+            await using var insCmd = CreateInsertPesajeCommand(conn, tx, ticket, usuarioId);
             await insCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
             await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBPESAJES", ticket.FolioPesaje.ToString(CultureInfo.InvariantCulture), "CREAR_TICKET", $"Patente={pat}, Bruto={ticket.Bruto}, Tara={ticket.Tara}, Neto={ticket.Neto}", ct).ConfigureAwait(false);
             return ticket.FolioPesaje;
         }, ct).ConfigureAwait(false);
+    }
+
+    private static FbCommand CreateInsertPesajeCommand(FbConnection conn, FbTransaction tx, Pesaje ticket, short usuarioId)
+    {
+        var insCmd = new FbCommand("""
+            INSERT INTO DBPESAJES (
+                FLPESAJE, PATENTE, ACOPLADO, FLPESAJEMOP, PRODUCTO, CLIENTE, ORIGEN, DESTINO, GDESPACHO,
+                NETOINF, FECHAING, HORAING, FECHASAL, HORASAL, FECHAMOD, HORAMOD,
+                BRUTO, TARA, NETO, TMOP, LARGO, MAXBRUTO, ESTADOMOP, CHOFER, TRASPASO,
+                OBSERVA1, OBSERVA2, TRANSP, TARAREG, TPESAJE, SAVEDTOSERVER,
+                USUAING, USUASAL, USUAMOD, USUADEL, ANULADO)
+            VALUES (
+                @FP, @PAT, @ACO, @FM, @PR, @CL, @OR, @DE, @GD,
+                @NI, @FI, @HI, @FS, @HS, @FMOD, @HMOD,
+                @BR, @TA, @NE, @TM, @LA, @MB, @EM, @CH, @TRS,
+                @OB1, @OB2, @TR, @TRG, @TP, @SV,
+                @UI, @US, @UM, @UD, @AN)
+            """, conn, tx);
+        AddParam(insCmd, "@FP", ticket.FolioPesaje);
+        AddParam(insCmd, "@PAT", ticket.Patente);
+        AddParam(insCmd, "@ACO", ticket.Acoplado);
+        AddParam(insCmd, "@FM", ticket.FolioPesajeMop);
+        AddParam(insCmd, "@PR", ticket.Producto.Trim());
+        AddParam(insCmd, "@CL", ticket.Cliente.Trim());
+        AddParam(insCmd, "@OR", ticket.Origen.Trim());
+        AddParam(insCmd, "@DE", ticket.Destino.Trim());
+        AddParam(insCmd, "@GD", ticket.GuiaDespacho.Trim());
+        AddParam(insCmd, "@NI", ticket.NetoInformado);
+        AddParam(insCmd, "@FI", ticket.FechaIngreso.Date);
+        AddParam(insCmd, "@HI", ticket.HoraIngreso);
+        AddParam(insCmd, "@FS", ticket.FechaSalida.Date);
+        AddParam(insCmd, "@HS", ticket.HoraSalida);
+        AddParam(insCmd, "@FMOD", DateTime.Today);
+        AddParam(insCmd, "@HMOD", DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture));
+        AddParam(insCmd, "@BR", ticket.Bruto);
+        AddParam(insCmd, "@TA", ticket.Tara);
+        AddParam(insCmd, "@NE", ticket.Neto);
+        AddParam(insCmd, "@TM", ticket.TipoMop);
+        AddParam(insCmd, "@LA", ticket.Largo);
+        AddParam(insCmd, "@MB", ticket.MaxBruto);
+        AddParam(insCmd, "@EM", ((short)ticket.EstadoMop).ToString(CultureInfo.InvariantCulture));
+        AddParam(insCmd, "@CH", ticket.Chofer.Trim());
+        AddParam(insCmd, "@TRS", ticket.Traspaso);
+        AddParam(insCmd, "@OB1", ticket.Observacion1.Trim());
+        AddParam(insCmd, "@OB2", ticket.Observacion2.Trim());
+        AddParam(insCmd, "@TR", ticket.Transportista.Trim());
+        AddParam(insCmd, "@TRG", ticket.TaraRegistrada ? "1" : "0");
+        AddParam(insCmd, "@TP", (short)ticket.TipoPesaje);
+        AddParam(insCmd, "@SV", ticket.SavedToServer);
+        AddParam(insCmd, "@UI", ticket.UsuarioIngreso > 0 ? ticket.UsuarioIngreso : usuarioId);
+        AddParam(insCmd, "@US", ticket.UsuarioSalida > 0 ? ticket.UsuarioSalida : usuarioId);
+        AddParam(insCmd, "@UM", usuarioId);
+        AddParam(insCmd, "@UD", ticket.Anulado ? usuarioId : (short)0);
+        AddParam(insCmd, "@AN", ticket.Anulado ? "1" : "0");
+        return insCmd;
     }
 
     public async Task ModificarTransitoAsync(RegistroTransito tr, short usuarioId, CancellationToken ct = default)
@@ -644,12 +657,18 @@ public sealed class WeighingRepository
         }, ct).ConfigureAwait(false);
     }
 
-    public async Task ModificarPesajeAsync(Pesaje p, short usuarioId, CancellationToken ct = default)
+    public async Task ModificarPesajeAsync(
+        Pesaje p,
+        short usuarioId,
+        bool preserveManualNeto = false,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(p);
         DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         DateTime now = DateTime.Now;
-        p.Neto = p.Anulado ? 0 : WeighingCalculator.CalcularNeto(p.Bruto, p.Tara);
+        p.Neto = p.Anulado
+            ? 0
+            : (preserveManualNeto ? Math.Max(0, p.Neto) : WeighingCalculator.CalcularNeto(p.Bruto, p.Tara));
         p.FechaModificacion = now.Date;
         p.HoraModificacion = now.ToString("HH:mm", CultureInfo.InvariantCulture);
         p.UsuarioModificacion = usuarioId;
@@ -699,6 +718,156 @@ public sealed class WeighingRepository
             }
 
             await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBPESAJES", p.FolioPesaje.ToString(CultureInfo.InvariantCulture), "MODIFICAR", $"Patente={p.Patente}, Bruto={p.Bruto}, Tara={p.Tara}, Neto={p.Neto}", ct).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Divide un ticket cerrado en 2 tickets atómicamente: conserva el folio origen con Parte 1
+    /// y crea un nuevo ticket con Parte 2 asignándole un folio libre sin colisionar con En Proceso ni históricos.
+    /// </summary>
+    public async Task<TicketSplitResult> SplitTicketAsync(
+        TicketSplitRequest request,
+        short usuarioId,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.OriginalFolio <= 0)
+        {
+            throw new InvalidOperationException("El folio original a dividir debe ser mayor a 0.");
+        }
+        if (request.NetoParte1 <= 0 || request.NetoParte2 <= 0)
+        {
+            throw new InvalidOperationException("Ambas partes de la división deben tener Neto mayor a 0.");
+        }
+
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+
+        return await _db.ExecuteInTransactionAsync(async (conn, tx) =>
+        {
+            await using var sel = new FbCommand("SELECT FIRST 1 * FROM DBPESAJES WHERE FLPESAJE = @FP", conn, tx);
+            AddParam(sel, "@FP", request.OriginalFolio);
+            await using FbDataReader r = await sel.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            if (!await r.ReadAsync(ct).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException($"No existe el ticket histórico #{request.OriginalFolio} para dividir.");
+            }
+            if (GetFlag(r, "ANULADO"))
+            {
+                throw new InvalidOperationException($"El ticket #{request.OriginalFolio} está ANULADO y no puede dividirse.");
+            }
+
+            int origNeto = GetInt(r, "NETO");
+            if (origNeto <= 0)
+            {
+                origNeto = WeighingCalculator.CalcularNeto(GetInt(r, "BRUTO"), GetInt(r, "TARA"));
+            }
+            if (origNeto < 2)
+            {
+                throw new InvalidOperationException($"El ticket #{request.OriginalFolio} tiene Neto={origNeto} kg (mínimo 2 kg para dividir).");
+            }
+            if (request.NetoParte1 + request.NetoParte2 != origNeto)
+            {
+                throw new InvalidOperationException($"La suma Neto Parte 1 ({request.NetoParte1:N0}) + Neto Parte 2 ({request.NetoParte2:N0}) debe igualar al Neto original ({origNeto:N0}).");
+            }
+
+            var clone = new Pesaje
+            {
+                Patente = GetStr(r, "PATENTE"),
+                Acoplado = GetStr(r, "ACOPLADO"),
+                FolioPesajeMop = GetInt(r, "FLPESAJEMOP"),
+                Producto = GetStr(r, "PRODUCTO"),
+                Cliente = GetStr(r, "CLIENTE"),
+                Origen = GetStr(r, "ORIGEN"),
+                Destino = GetStr(r, "DESTINO"),
+                GuiaDespacho = GetStr(r, "GDESPACHO"),
+                NetoInformado = 0,
+                FechaIngreso = GetDate(r, "FECHAING") ?? DateTime.Today,
+                HoraIngreso = GetStr(r, "HORAING"),
+                FechaSalida = GetDate(r, "FECHASAL") ?? (GetDate(r, "FECHAING") ?? DateTime.Today),
+                HoraSalida = GetStr(r, "HORASAL"),
+                TipoMop = GetShort(r, "TMOP"),
+                Largo = GetShort(r, "LARGO"),
+                MaxBruto = GetInt(r, "MAXBRUTO"),
+                EstadoMop = short.TryParse(GetStr(r, "ESTADOMOP"), out short em) ? (EstadoNormaMop)em : EstadoNormaMop.NoAplica,
+                Chofer = GetStr(r, "CHOFER"),
+                Traspaso = GetNullableStr(r, "TRASPASO"),
+                Observacion1 = GetStr(r, "OBSERVA1"),
+                Observacion2 = GetStr(r, "OBSERVA2"),
+                Transportista = GetStr(r, "TRANSP"),
+                TaraRegistrada = GetFlag(r, "TARAREG"),
+                TipoPesaje = (TipoPesaje)GetShort(r, "TPESAJE", 1),
+                SavedToServer = GetNullableStr(r, "SAVEDTOSERVER"),
+                UsuarioIngreso = GetShort(r, "USUAING", usuarioId),
+                UsuarioSalida = GetShort(r, "USUASAL", usuarioId),
+                Anulado = false
+            };
+            await r.CloseAsync().ConfigureAwait(false);
+
+            int newFolio;
+            if (request.CustomNewFolio is > 0)
+            {
+                FolioAvailabilityResult chk = await CheckFolioAvailabilityInternalAsync(conn, tx, caps, request.CustomNewFolio.Value, null, null, ct).ConfigureAwait(false);
+                if (!chk.Disponible)
+                {
+                    throw new InvalidOperationException(chk.Mensaje);
+                }
+                newFolio = request.CustomNewFolio.Value;
+                await AdvanceFolioPointersIfNeededAsync(conn, tx, caps, newFolio, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                newFolio = await AllocateNextPesajeFolioAsync(conn, tx, caps, ct).ConfigureAwait(false);
+            }
+
+            string obs1Orig = clone.Observacion2;
+            string obs2New = clone.Observacion2;
+            if (request.AppendSplitNote)
+            {
+                string tagOrig = $"Dividido #{request.OriginalFolio}->{request.OriginalFolio}/{newFolio} (Orig {origNeto})";
+                string tagNew = $"División desde Folio #{request.OriginalFolio} (Orig {origNeto})";
+                obs1Orig = tagOrig.Length > 120 ? tagOrig[..120] : tagOrig;
+                obs2New = tagNew.Length > 120 ? tagNew[..120] : tagNew;
+            }
+
+            DateTime now = DateTime.Now;
+            string hhmm = now.ToString("HH:mm", CultureInfo.InvariantCulture);
+
+            await using var upd = new FbCommand("""
+                UPDATE DBPESAJES SET
+                    BRUTO = @BR, TARA = @TA, NETO = @NE,
+                    OBSERVA2 = @OB2, FECHAMOD = @FMOD, HORAMOD = @HMOD, USUAMOD = @UM
+                WHERE FLPESAJE = @FP
+                """, conn, tx);
+            AddParam(upd, "@BR", request.BrutoParte1);
+            AddParam(upd, "@TA", request.TaraParte1);
+            AddParam(upd, "@NE", request.NetoParte1);
+            AddParam(upd, "@OB2", obs1Orig);
+            AddParam(upd, "@FMOD", now.Date);
+            AddParam(upd, "@HMOD", hhmm);
+            AddParam(upd, "@UM", usuarioId);
+            AddParam(upd, "@FP", request.OriginalFolio);
+            await upd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+            clone.FolioPesaje = newFolio;
+            clone.Bruto = request.BrutoParte2;
+            clone.Tara = request.TaraParte2;
+            clone.Neto = request.NetoParte2;
+            clone.Observacion2 = obs2New;
+            await using var insNew = CreateInsertPesajeCommand(conn, tx, clone, usuarioId);
+            await insNew.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+            await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBPESAJES", request.OriginalFolio.ToString(CultureInfo.InvariantCulture), "DIVIDIR_ORIGEN", $"Neto1={request.NetoParte1}, NuevoFolio={newFolio}, Neto2={request.NetoParte2}", ct).ConfigureAwait(false);
+            await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBPESAJES", newFolio.ToString(CultureInfo.InvariantCulture), "CREAR_DIVISION", $"OrigenFolio={request.OriginalFolio}, Neto2={request.NetoParte2}", ct).ConfigureAwait(false);
+
+            return new TicketSplitResult(
+                request.OriginalFolio,
+                newFolio,
+                request.NetoParte1,
+                request.NetoParte2,
+                request.BrutoParte1,
+                request.TaraParte1,
+                request.BrutoParte2,
+                request.TaraParte2);
         }, ct).ConfigureAwait(false);
     }
 
