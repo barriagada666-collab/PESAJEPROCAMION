@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Windows.Forms;
 using PesajeProCamion.App.Services;
 using PesajeProCamion.App.UI.Catalogs;
@@ -7,6 +8,7 @@ using PesajeProCamion.App.UI.Management;
 using PesajeProCamion.App.UI.Theme;
 using PesajeProCamion.App.UI.Weighing;
 using PesajeProCamion.Data.Configuration;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 using Xunit;
 
@@ -51,7 +53,22 @@ public sealed class UiSmokeAndAuditTests
                     }
                 };
 
+                AppLogger.IsSilentTestHost = true;
+                ApplicationConfiguration.Initialize();
                 Assert.NotNull(IconCatalog.GetCorporateLogo());
+
+                var samplePesaje = new Pesaje
+                {
+                    FolioPesaje = 100,
+                    Patente = "ABCD12",
+                    Bruto = 28000,
+                    Tara = 11000,
+                    Neto = 17000,
+                    FechaIngreso = DateTime.Today,
+                    HoraIngreso = "08:00",
+                    FechaSalida = DateTime.Today,
+                    HoraSalida = "08:30"
+                };
 
                 Control[] components =
                 [
@@ -68,6 +85,9 @@ public sealed class UiSmokeAndAuditTests
                     new DinamicoSetupForm(services),
                     new InstalacionForm(services),
                     new UsuariosForm(services),
+                    new TicketViewerDialog(services, samplePesaje),
+                    new TicketEditorDialog(services, TicketEditorMode.CreateNew),
+                    new ModPesajeDialog(services, samplePesaje),
                     new ClientesForm(services),
                     new CamionesForm(services),
                     new ProductosForm(services),
@@ -86,7 +106,35 @@ public sealed class UiSmokeAndAuditTests
                 {
                     using (root)
                     {
+                        if (root is Form form)
+                        {
+                            form.ShowInTaskbar = false;
+                            form.Opacity = 0;
+                            if (form is MainShellForm ms)
+                            {
+                                ms.WindowState = FormWindowState.Normal;
+                                ms.Size = new Size(1024, 700);
+                            }
+                            form.Show();
+                            Application.DoEvents();
+                        }
+                        else
+                        {
+                            root.Size = new Size(1240, 720);
+                            root.PerformLayout();
+                        }
                         AuditControlTree(root);
+                        if (root is MainShellForm msLoaded)
+                        {
+                            TabControl? tabs = msLoaded.Controls.OfType<TabControl>().FirstOrDefault();
+                            Assert.NotNull(tabs);
+                            for (int t = 0; t < tabs.TabPages.Count; t++)
+                            {
+                                tabs.SelectedIndex = t;
+                                Application.DoEvents();
+                                AuditControlTree(tabs.TabPages[t]);
+                            }
+                        }
                     }
                 }
             }
@@ -116,6 +164,18 @@ public sealed class UiSmokeAndAuditTests
         {
             Assert.NotNull(btn.Image);
             Assert.True(!string.IsNullOrWhiteSpace(btn.Text) || btn.Size.Width <= 40, $"Botón sin texto descriptivo en {root.Parent?.Name}");
+            if (!string.IsNullOrWhiteSpace(btn.Text))
+            {
+                Size measured = TextRenderer.MeasureText(btn.Text, btn.Font);
+                int neededW = measured.Width + (btn.Image is not null ? btn.Image.Width + 6 : 0) + btn.Padding.Horizontal + 10;
+                Assert.True(btn.Width >= neededW, $"Botón recortado '{btn.Text}': Width={btn.Width} < Needed={neededW}");
+            }
+        }
+        else if (root is DataGridView dgv &&
+                 (string.Equals(dgv.Name, "_detalleBiGrid", StringComparison.Ordinal) ||
+                  root.FindForm() is UsuariosForm))
+        {
+            Assert.NotNull(dgv.ContextMenuStrip);
         }
         else if (root is ToolStrip ts)
         {
@@ -131,6 +191,16 @@ public sealed class UiSmokeAndAuditTests
                     Assert.False(string.IsNullOrWhiteSpace(tsb.ToolTipText), $"ToolStripButton '{tsb.Text}' sin ToolTip.");
                 }
             }
+        }
+
+        if (root.Parent is not null && root.Dock == DockStyle.None &&
+            !(root.Parent is Panel p && p.AutoScroll) && root is not ScrollBar && root.Parent is not Form)
+        {
+            Assert.True(
+                root.Right <= root.Parent.ClientSize.Width + 2 &&
+                root.Bottom <= root.Parent.ClientSize.Height + 2 &&
+                root.Left >= 0 && root.Top >= 0,
+                $"Control fuera de rango: {root.GetType().Name} '{root.Text}' {root.Bounds} en {root.Parent.ClientSize}");
         }
 
         foreach (Control child in root.Controls)

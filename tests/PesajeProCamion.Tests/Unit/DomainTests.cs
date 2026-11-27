@@ -110,10 +110,52 @@ public sealed class DomainTests
         Assert.True(PasswordHasher.VerifyPassword("patio", "PATIO", out bool rehash2));
         Assert.True(rehash2);
 
+        string adminHash = PasswordHasher.HashPassword("Cambias0");
+        Assert.True(PasswordHasher.VerifyPassword("Cambias0", adminHash, out _));
+        Assert.True(PasswordHasher.VerifyPassword("CAMBIAS0", adminHash, out _));
+
         var consulta = new Usuario { Activo = true, Perfil = PerfilOperacion.Consulta, IngresoGestion = true, PuedeImprimir = true };
         Assert.False(PermissionService.EstaAutorizado(consulta, AccionAutorizacion.IngresarPesaje));
         Assert.True(PermissionService.EstaAutorizado(consulta, AccionAutorizacion.IngresarGestion));
         Assert.False(PermissionService.EstaAutorizado(consulta, AccionAutorizacion.EliminarRegistro));
         Assert.False(PermissionService.EstaAutorizado(consulta, AccionAutorizacion.ConfigurarVisorBascula));
+    }
+
+    [Fact]
+    public void AnalyticsCalculator_FiltersAndSegmentsByPatenteProveedorClienteProductoAndDate()
+    {
+        List<Pesaje> dataset =
+        [
+            new() { FolioPesaje = 1, FechaSalida = new DateTime(2026, 11, 20), Patente = "CHHW80", Cliente = "C1", NombreCliente = "CLIENTE ALFA", Origen = "O1", NombreOrigen = "PROVEEDOR NORTE", Producto = "P1", NombreProducto = "HDPE", Bruto = 30000, Tara = 10000, Neto = 20000, TipoPesaje = TipoPesaje.Recepcion },
+            new() { FolioPesaje = 2, FechaSalida = new DateTime(2026, 11, 21), Patente = "HKWK38", Cliente = "C2", NombreCliente = "CLIENTE BETA", Origen = "O2", NombreOrigen = "PROVEEDOR SUR", Producto = "P2", NombreProducto = "STRETCH", Bruto = 25000, Tara = 10000, Neto = 15000, TipoPesaje = TipoPesaje.Despacho },
+            new() { FolioPesaje = 3, FechaSalida = new DateTime(2026, 11, 22), Patente = "CHHW80", Cliente = "C1", NombreCliente = "CLIENTE ALFA", Origen = "O1", NombreOrigen = "PROVEEDOR NORTE", Producto = "P1", NombreProducto = "HDPE", Bruto = 18000, Tara = 8000, Neto = 10000, Anulado = true }
+        ];
+
+        AnalyticsResult allActivos = AnalyticsCalculator.FilterAndAnalyze(dataset, new ReportFilterCriteria
+        {
+            Desde = new DateTime(2026, 11, 1),
+            Hasta = new DateTime(2026, 11, 30),
+            Estado = EstadoTicketFiltro.SoloActivos
+        });
+        Assert.Equal(2, allActivos.Kpis.TotalTickets);
+        Assert.Equal(35000, allActivos.Kpis.TotalNetoKg);
+        Assert.Equal(35.0, allActivos.Kpis.ToneladasNetas);
+        Assert.Equal(2, allActivos.PorCliente.Count);
+        Assert.Equal(2, allActivos.PorProveedorOrigen.Count);
+        Assert.Equal(2, allActivos.PorProducto.Count);
+        Assert.Equal(2, allActivos.PorPatente.Count);
+
+        AnalyticsResult slicePat = AnalyticsCalculator.FilterAndAnalyze(dataset, new ReportFilterCriteria
+        {
+            Patente = "CHHW80",
+            ProveedorOrigen = "PROVEEDOR NORTE",
+            Cliente = "CLIENTE ALFA",
+            Producto = "HDPE",
+            Estado = EstadoTicketFiltro.Todos
+        });
+        Assert.Equal(2, slicePat.Kpis.TotalTickets);
+        Assert.Equal(1, slicePat.Kpis.TicketsActivos);
+        Assert.Equal(1, slicePat.Kpis.TicketsAnulados);
+        Assert.Equal(20000, slicePat.Kpis.TotalNetoKg);
     }
 }

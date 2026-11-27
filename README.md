@@ -1,28 +1,32 @@
 # PesajeProCamion
 
-Sistema integral de pesaje de camiones en báscula comercial, control de peso por ejes (normativa M.O.P. Chile) y gestión administrativa de planta, migrado completamente a **.NET 10 Zero-Dependencias**, **Firebird SQL** e instalador **Inno Setup 7** (con versión **Portable Single-File** y conexión transparente a servidores locales o remotos en red).
+Sistema integral de pesaje de camiones en báscula comercial, control de peso por ejes (normativa M.O.P. Chile), gestión administrativa CRUD de tickets/usuarios y analítica BI en planta, desarrollado sobre **.NET 10 Zero-Dependencias**, **Firebird SQL** e instalador **Inno Setup 7** (con versión **Portable Single-File** y conexión transparente a servidores locales o remotos en red).
 
 ---
 
 ## Descripción del Proyecto
 
-**PesajeProCamion v2.0.0 LTS** unifica y moderniza los módulos operativos y administrativos heredados bajo una interfaz corporativa **Petrol Teal + Dorado**, eliminando dependencias legacy BDE/ODS 9.1, agregando resolución automática de rutas compartidas de red UNC (`\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`), visor de báscula RS-232 en tiempo real y diagnóstico centralizado de logs de errores.
+**PesajeProCamion v2.1.0 LTS** unifica y moderniza la operación completa de romana y administración bajo una interfaz corporativa **Petrol Teal + Dorado** 100% responsiva (validada desde `1024x700` hasta `4K`), eliminando dependencias legacy BDE/ODS 9.1, conectándose a bases locales o compartidas en red (`\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`), protegiendo folios contra colisiones e incorporando inteligencia de negocio (KPI, segmentación y exportación nativa a PDF y Excel `.xlsx`).
 
 ### Características Principales
-- **Identidad Corporativa Petrol Teal + Logo Oficial**: Pantalla de arranque industrial (`SplashForm`), encabezado de gradiente petróleo profundo, logo oficial embebido, barra superior uniforme e íconos vectoriales High-DPI.
-- **Conexión Remota en Red y Migración ODS 9.1**:
-  - Modal interactivo con análisis de rutas UNC (`\\IP\recurso\archivo.GDB`), detección automática de host/dialecto/charset (`Dialecto 1` legacy o `Dialecto 3` UTF8), botón **Probar Conexión** (con latencia en `ms`, versión del servidor y conteo de pesajes), **Aplicar (Sin Cerrar)** y **Guardar y Conectar**.
-  - Compatibilidad automática con esquemas remotos sin generadores ni `DBAUDITLOG` (`DatabaseCapabilities`), además de migrador binario ODS 9.1 -> Firebird UTF8 (`FileShare.ReadWrite`).
-- **Visor de Báscula RS-232 (`VisorSetupForm` + LCD 7 Segmentos)**:
-  - Soporta tramas con `STX` (`PosData`/`LenData`) y tramas ASCII delimitadas por línea (`STX = 0`), inyección de tramas de prueba, simulación (`/TEST`) y curva dinámica `DEMO1`.
-- **Pesaje Comercial y Control de Ejes M.O.P.**:
-  - Flujo completo **Pesar Camión** / **Pesar Carro / 2° Peso** / **Tara Registrada** (vigencia `NDIAS`) / **Grabar Pesaje**, autoresolución de códigos al salir del campo y evaluación normativa Decreto 158/80 y Ley 19.171/92.
-- **Impresión, Exportación Nativa e Informes**:
-  - Selector de **Nro de Copias**, ticket comercial gráfico con logotipo y totales en grilla (**Bruto / Tara / Neto**), exportación nativa sin Excel instalado a `.xlsx` (OpenXML), `.dbf` (dBASE III) y `.csv` UTF-8 BOM, y 11 informes operativos y de diagnóstico.
-- **Trazabilidad y Logs de Errores (`ErrorLogViewerDialog`)**:
-  - Captura global de excepciones UI/asíncronas, eventos SQL y tramas RS-232 con exportación directa `.log`.
-- **Cero Dependencias (Instalador + Portable)**:
-  - Compilación autocontenida `.NET 10 win-x64` tanto en instalador **Inno Setup 7** como en edición **Portable Single-File** sin instalación previa.
+- **Identidad Corporativa Petrol Teal + Logo Oficial**: Pantalla de arranque industrial (`SplashForm`), encabezados con gradiente petróleo profundo, logotipo oficial embebido, tema uniforme y botones vectoriales High-DPI sin recortes ni desbordes.
+- **Gestión Completa de Usuarios y Seguridad RBAC (`UsuariosForm`)**:
+  - Cuenta administradora principal **`barriagada`** (clave inicial **`Cambias0`**) garantizada en inicialización y migración.
+  - CRUD completo de operadores/administradores, restablecimiento de clave con visor mostrar/ocultar, plantillas de rol (**Admin Total / Operador Pesaje / Solo Consulta**), permisos granulares (`Agregar`, `Modificar`, `Eliminar`, `Imprimir`, acceso por módulo), protección contra eliminación del último administrador activo y menú contextual clic derecho.
+- **CRUD Completo de Tickets y Visor Gráfico sin Conflictos de Folio (`TicketEditorDialog` + `TicketViewerDialog`)**:
+  - Creación de tickets manuales históricos (`DBPESAJES`) o En Proceso (`DBTRANSITO`) y edición segura de registros existentes o pendientes en planta.
+  - Verificación en vivo de folios disponibles (`CheckFolioAvailabilityAsync`) respetando estrictamente los folios activos **En Proceso**.
+  - Visor gráfico interactivo del ticket con logotipo, estado (`COMPLETADO / EN PROCESO / ANULADO`), selector de copias, previsualización/impresión y exportación directa de ticket a PDF.
+- **Menús Contextuales por Clic Derecho (`ContextMenuStrip`)**:
+  - Clic derecho en **Camiones en Tránsito**, **Administración de Pesajes**, **Gestión de Usuarios**, **Detalle BI** y **Diálogos de Búsqueda** para visualizar, modificar, duplicar, completar salida, anular/reactivar, exportar a PDF o copiar datos al instante.
+- **Centro Analítico BI, KPIs y Exportación Nativa PDF + Excel (`.xlsx`)**:
+  - Panel de **Informes y Auditoría** con filtro `DatePicker` (`Desde` / `Hasta`), accesos rápidos (**Hoy / 7D / Mes / Todo**), segmentadores reactivos (**Patente, Proveedor/Origen, Cliente, Producto, Tipo, Estado, Búsqueda**), 5 tarjetas **KPI**, pestañas por segmento, **Gráficos KPI** nativos y 11 informes operativos clásicos.
+  - Exportación **sin dependencias externas** (no requiere Microsoft Excel ni librerías externas) a **PDF** corporativo (`PdfDocumentWriter`) y libro **Excel `.xlsx` multi-hoja** (KPIs + Detalle + Segmentación por Cliente, Proveedor, Producto y Patente), además de **`.dbf`** y **`.csv`**.
+- **Conexión Remota en Red, Visor RS-232 y Trazabilidad de Errores**:
+  - Modal de BD Remota (`RemoteDatabaseResolver` + `DatabaseCapabilities`) para rutas UNC/IP (`\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`), autodetección Dialecto `1/3` y migrador ODS 9.1 `.GDB -> .FDB` (`FileShare.ReadWrite`).
+  - Visor RS-232 COM1..COM16 (`STX > 0` o `CR/LF` con `STX = 0`), simulación `/TEST`, curva dinámica M.O.P. `DEMO1` y visor en vivo de logs (`ErrorLogViewerDialog`).
+- **Cero Dependencias (Instalador Inno Setup 7 + Portable Single-File)**:
+  - Distribución autocontenida `.NET 10 win-x64` lista para ejecutar en Windows 10/11 limpio.
 
 ---
 
@@ -32,21 +36,29 @@ Sistema integral de pesaje de camiones en báscula comercial, control de peso po
 | :---: | :---: |
 | ![Splash Corporativo](docs/screenshots/splash.png) | ![Inicio de Sesión](docs/screenshots/login.png) |
 
-| Panel de Pesaje Comercial y Visor RS-232 | Conexión Remota BD y Migrador |
+| Panel de Pesaje Comercial y Visor RS-232 | Administración de Pesajes (CRUD + Clic Derecho) |
 | :---: | :---: |
-| ![Panel de Pesaje](docs/screenshots/pesaje_main.png) | ![Conexión BD Remota](docs/screenshots/remote_db.png) |
+| ![Panel de Pesaje](docs/screenshots/pesaje_main.png) | ![Administración de Pesajes](docs/screenshots/gestion_crud.png) |
 
-| Visor RS-232 / Tramas ASCII | Visor de Logs de Errores |
+| Centro Analítico BI KPI y Segmentación | Gestión Integral de Usuarios y RBAC |
 | :---: | :---: |
-| ![Visor Serial](docs/screenshots/visor_setup.png) | ![Logs de Errores](docs/screenshots/logs_modal.png) |
+| ![Informes BI KPI](docs/screenshots/informes_bi_kpi.png) | ![Usuarios y Permisos](docs/screenshots/usuarios_crud.png) |
+
+| Visor Gráfico de Ticket Comercial | Editor / Creador Manual de Ticket sin Colisión |
+| :---: | :---: |
+| ![Visor de Ticket](docs/screenshots/ticket_viewer.png) | ![Editor de Ticket](docs/screenshots/ticket_editor.png) |
+
+| Conexión Remota BD y Migrador | Visor RS-232 / Tramas ASCII |
+| :---: | :---: |
+| ![Conexión BD Remota](docs/screenshots/remote_db.png) | ![Visor Serial](docs/screenshots/visor_setup.png) |
 
 ---
 
 ## Requisitos
 
 ### Equipos Finales (Cero Dependencias)
-- **Windows 10 / Windows 11 (64 bits)**.
-- **No requiere instalar .NET Runtime** (distribución autocontenida en Instalador y Portable).
+- **Windows 10 / Windows 11 (64 bits)**, resolución mínima recomendada `1024x700`.
+- **No requiere instalar .NET Runtime ni Excel** (compilación autocontenida con motores nativos OpenXML `.xlsx` y PDF 1.4 integrados).
 - Conectividad hacia servidor **Firebird / InterBase** (local `localhost:3050` o equipo remoto en red TCP `3050`).
 
 ### Desarrollo y Empaquetado
@@ -60,21 +72,20 @@ Sistema integral de pesaje de camiones en báscula comercial, control de peso po
 ## Instalación
 
 ### Opción 1 — Instalador Windows (Inno Setup 7)
-Descargue `PesajeProCamion_Setup_v2.0.0.exe` y ejecute el asistente (admite actualización directa conservando datos y configuración):
+Descargue `PesajeProCamion_Setup_v2.1.0.exe` desde la sección **Releases** de GitHub y ejecute el asistente (actualiza versiones anteriores conservando configuración y datos):
 ```powershell
-PesajeProCamion_Setup_v2.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+PesajeProCamion_Setup_v2.1.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ### Opción 2 — Edición Portable Zero-Dependencias
-Descomprima `PesajeProCamion_Portable_v2.0.0_win-x64.zip` y ejecute `PesajeProCamion.App.exe` directamente sin instalar ni requerir permisos administrativos. Con `portable.flag` o `appsettings.json` junto al ejecutable, la configuración y los archivos `Logs\` se conservan de forma portable.
+Descomprima `PesajeProCamion_Portable_v2.1.0_win-x64.zip` y ejecute `PesajeProCamion.App.exe` directamente sin instalar ni requerir privilegios administrativos. Con `portable.flag` o `appsettings.json` junto al ejecutable, la configuración y los archivos `Logs\` se conservan junto al binario.
 
 ---
 
-## Configuración y Conexión a BD Remota
+## Configuración y Acceso Inicial
 
-1. En **Login** (`Servidor BD`) o en la barra superior principal (**Configurar Servidor BD...**), ingrese la ruta de red UNC (ej: `\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`) o servidor + ruta local.
-2. Presione **Probar Conexión** para resolver automáticamente host, candidato de ruta remota, dialecto (`1` legacy / `3` moderno) y latencia.
-3. Presione **Aplicar (Sin Cerrar)** o **Guardar y Conectar**.
+- **Usuario administrador predeterminado**: `barriagada` / contraseña: `Cambias0` (puede iniciar sesión seleccionando el usuario o escribiéndolo directamente; desde *Configuración -> Usuarios y Permisos...* puede administrar todos los usuarios, claves y privilegios).
+- **Conexión BD local o remota**: En **Login** (`Servidor BD`) o en la barra superior principal (**Configurar Servidor BD...**), ingrese la ruta UNC compartida (ej.: `\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`), presione **Probar Conexión** y guarde con **Aplicar (Sin Cerrar)** o **Guardar y Conectar**.
 
 Diagnóstico o migración rápida desde consola:
 ```powershell
@@ -114,9 +125,9 @@ Documentación detallada en `docs/`:
 
 ## Versionado e Historial de Cambios
 
-Versionado semántico (`MAJOR.MINOR.PATCH`). Versión actual: **`2.0.0`**.
+Versionado semántico (`MAJOR.MINOR.PATCH`). Versión actual: **`2.1.0`**.
 Ver historial completo en [CHANGELOG.md](CHANGELOG.md).
 
 ## Créditos
 
-PesajeProCamion — Plataforma industrial de pesaje vehicular y control de ejes M.O.P. sobre **.NET 10** y **Firebird SQL**.
+PesajeProCamion — Plataforma industrial de pesaje vehicular, control de ejes M.O.P. y analítica BI sobre **.NET 10** y **Firebird SQL**.

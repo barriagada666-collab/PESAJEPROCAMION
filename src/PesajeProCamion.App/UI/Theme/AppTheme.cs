@@ -56,6 +56,7 @@ public static class AppTheme
         btn.Font = FontButton;
         btn.Cursor = Cursors.Hand;
         btn.Padding = new Padding(8, 2, 8, 2);
+        EnsureButtonFits(btn);
         tt?.SetToolTip(btn, tooltip);
     }
 
@@ -77,6 +78,10 @@ public static class AppTheme
         btn.Font = FontButton;
         btn.Cursor = Cursors.Hand;
         btn.Padding = iconOnly ? Padding.Empty : new Padding(6, 2, 6, 2);
+        if (!iconOnly)
+        {
+            EnsureButtonFits(btn);
+        }
         tt?.SetToolTip(btn, tooltip);
     }
 
@@ -94,7 +99,73 @@ public static class AppTheme
         btn.Font = FontButton;
         btn.Cursor = Cursors.Hand;
         btn.Padding = new Padding(8, 2, 8, 2);
+        EnsureButtonFits(btn);
         tt?.SetToolTip(btn, tooltip);
+    }
+
+    public static void EnsureButtonFits(Button btn, int minHeight = 32)
+    {
+        ArgumentNullException.ThrowIfNull(btn);
+        btn.AutoEllipsis = false;
+        if (string.IsNullOrWhiteSpace(btn.Text))
+        {
+            return;
+        }
+        Size textSz = TextRenderer.MeasureText(btn.Text, btn.Font);
+        int iconW = btn.Image is not null ? btn.Image.Width + 8 : 0;
+        int neededW = textSz.Width + iconW + btn.Padding.Horizontal + 14;
+        int neededH = Math.Max(minHeight, textSz.Height + btn.Padding.Vertical + 10);
+        if (btn.Width < neededW)
+        {
+            btn.Width = neededW;
+        }
+        if (btn.Height < neededH)
+        {
+            btn.Height = neededH;
+        }
+        btn.MinimumSize = new Size(Math.Max(btn.MinimumSize.Width, neededW), Math.Max(btn.MinimumSize.Height, neededH));
+    }
+
+    public static void ConfigureResponsiveDialog(Form form, int width, int height, int minWidth, int minHeight, bool resizable = true)
+    {
+        ArgumentNullException.ThrowIfNull(form);
+        form.AutoScaleMode = AutoScaleMode.Dpi;
+        form.FormBorderStyle = resizable ? FormBorderStyle.Sizable : FormBorderStyle.FixedDialog;
+        form.MaximizeBox = resizable;
+        form.MinimizeBox = false;
+        form.StartPosition = FormStartPosition.CenterParent;
+        form.ClientSize = new Size(width, height);
+        form.MinimumSize = new Size(minWidth, minHeight);
+        form.BackColor = BackgroundLight;
+        ApplyFormIcon(form);
+    }
+
+    public static void StyleContextMenu(ContextMenuStrip menu)
+    {
+        ArgumentNullException.ThrowIfNull(menu);
+        menu.Renderer = CreateMenuRenderer();
+        menu.Font = FontBody;
+        menu.BackColor = SurfaceCard;
+        menu.ForeColor = TextPrimary;
+        menu.ShowImageMargin = true;
+    }
+
+    public static async Task SafeLoadAsync(Control owner, string source, Func<Task> action)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(action);
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            Domain.Diagnostics.AppLogger.Error(source, $"Error cargando vista: {ex.Message}", ex);
+            if (!owner.IsDisposed && owner.Visible && !Domain.Diagnostics.AppLogger.IsSilentTestHost)
+            {
+                MessageBox.Show(owner, $"No se pudo cargar datos de {source}:\r\n{ex.Message}", source, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
     }
 
     public static void PaintTealGradient(Graphics g, Rectangle bounds, bool includeGoldBottomAccent = true)

@@ -232,7 +232,24 @@ public static class Ods9Migrator
                     ("@UI", Sh(r, "USUAING")), ("@UM", Sh(r, "USUAMOD"))
                 ], ct).ConfigureAwait(false);
         }
-        report.TableRowCounts["DBUSUARIOS"] = users.Count;
+        int migratedCount = users.Count;
+        bool hasBarriagada = users.Any(u => string.Equals(Str(u, "NOMBRE", 40).Trim(), "BARRIAGADA", StringComparison.OrdinalIgnoreCase));
+        if (!hasBarriagada)
+        {
+            short maxUserId = users.Count > 0 ? users.Max(u => Sh(u, "USUARIO")) : (short)0;
+            short barId = (short)(maxUserId + 1);
+            await ExecAsync(conn, tx, """
+                INSERT INTO DBUSUARIOS (
+                    USUARIO, NOMBRE, CARGO, PASS_WORD, ACTIVO, MODIFICAR, AGREGAR, ELIMINAR, IMPRIMIR,
+                    CAMBIOPW, INGRESOPJ, INGRESOGT, SUPSISTEMA, PERFIL, JTURNO, USUAING, USUAMOD)
+                VALUES (
+                    @U, 'BARRIAGADA', 'ADMINISTRADOR PRINCIPAL', @PW, '1', '1', '1', '1', '1', '1', '1', '1', '1', 2, '1', @U, @U)
+                """,
+                [("@U", barId), ("@PW", PasswordHasher.HashPassword("Cambias0"))], ct).ConfigureAwait(false);
+            migratedCount++;
+        }
+
+        report.TableRowCounts["DBUSUARIOS"] = migratedCount;
         if (hashPasswords && users.Count > 0)
         {
             report.Findings.Add($"Se convirtieron {report.PasswordsHashed} contraseñas en texto plano a hash PBKDF2-SHA256.");

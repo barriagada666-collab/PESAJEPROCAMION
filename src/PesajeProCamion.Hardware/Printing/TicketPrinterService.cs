@@ -5,12 +5,62 @@ using System.Runtime.InteropServices;
 using System.Text;
 using PesajeProCamion.Domain.Entities;
 using PesajeProCamion.Domain.Validation;
+using PesajeProCamion.Hardware.Export;
 
 namespace PesajeProCamion.Hardware.Printing;
 
-/// <summary>Motor de generación e impresión de tickets comerciales y boletos MOP (gráfico y texto RAW).</summary>
+/// <summary>Motor de generación e impresión de tickets comerciales y boletos MOP (gráfico, PDF y texto RAW).</summary>
 public static partial class TicketPrinterService
 {
+    public static void ExportCommercialTicketToPdf(
+        string filePath,
+        Pesaje p,
+        BasculaInfo bascula,
+        ConfiguracionSistema? cfg = null,
+        bool isEnProceso = false)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        ArgumentNullException.ThrowIfNull(p);
+        ArgumentNullException.ThrowIfNull(bascula);
+
+        string company = string.IsNullOrWhiteSpace(bascula.NombreEmpresa) ? (cfg?.Titulo1 ?? "PESAJE DE CAMIONES") : bascula.NombreEmpresa;
+        string companySub = string.IsNullOrWhiteSpace(bascula.Rut) ? bascula.Direccion : $"{bascula.Direccion}  |  RUT: {bascula.Rut}";
+        string badge = p.Anulado ? "ANULADO" : (isEnProceso ? "EN PROCESO" : "COMPLETADO");
+
+        (string Label, string Value)[] details =
+        [
+            ("Folio Pesaje:", $"#{p.FolioPesaje}"),
+            ("Tipo Pesaje:", p.TipoPesaje.ToString()),
+            ("Patente / Acoplado:", string.IsNullOrWhiteSpace(p.Acoplado) ? p.Patente : $"{p.Patente}  /  {p.Acoplado}"),
+            ("Cliente:", $"{p.Cliente} - {p.NombreCliente}".Trim(' ', '-')),
+            ("Producto:", $"{p.Producto} - {p.NombreProducto}".Trim(' ', '-')),
+            ("Origen / Proveedor:", $"{p.Origen} - {p.NombreOrigen}".Trim(' ', '-')),
+            ("Destino:", $"{p.Destino} - {p.NombreDestino}".Trim(' ', '-')),
+            ("Transportista:", $"{p.Transportista} - {p.NombreTransportista}".Trim(' ', '-')),
+            ("Chofer:", $"{p.Chofer} - {p.NombreChofer}".Trim(' ', '-')),
+            ("Guía Despacho:", string.IsNullOrWhiteSpace(p.GuiaDespacho) ? "-" : p.GuiaDespacho)
+        ];
+
+        string ent = $"{p.FechaIngreso:dd/MM/yyyy} {p.HoraIngreso}  |  Operador: {p.NombreUsuarioIngreso}".Trim();
+        string sal = isEnProceso
+            ? "Vehículo actualmente EN TRÁNSITO (pendiente 2° pesaje)"
+            : $"{p.FechaSalida:dd/MM/yyyy} {p.HoraSalida}  |  Operador: {p.NombreUsuarioSalida}".Trim();
+        string obs = $"{p.Observacion1} {p.Observacion2}".Trim();
+
+        PdfDocumentWriter.WriteSingleTicketPdf(
+            filePath,
+            company,
+            companySub,
+            "TICKET DE PESAJE COMERCIAL",
+            badge,
+            details,
+            p.Bruto,
+            p.Tara,
+            isEnProceso ? 0 : p.Neto,
+            ent,
+            sal,
+            string.IsNullOrWhiteSpace(obs) ? "-" : obs);
+    }
     public static string BuildRawTicketText(Pesaje p, BasculaInfo bascula, ConfiguracionSistema? cfg = null)
     {
         ArgumentNullException.ThrowIfNull(p);

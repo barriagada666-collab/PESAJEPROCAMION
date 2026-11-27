@@ -26,27 +26,33 @@ public sealed class CatalogLookupDialog<T> : Form
         _searchExtractor = searchExtractor;
 
         Text = title;
-        Size = new Size(760, 500);
-        StartPosition = FormStartPosition.CenterParent;
-        BackColor = AppTheme.BackgroundLight;
+        AppTheme.ConfigureResponsiveDialog(this, 820, 520, 680, 420, resizable: true);
         KeyPreview = true;
 
-        var top = new Panel { Dock = DockStyle.Top, Height = 52, Padding = new Padding(12, 10, 12, 8), BackColor = AppTheme.SurfaceCard };
-        var lbl = new Label { Text = "Buscar:", Location = new Point(14, 15), AutoSize = true, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
-        _txtSearch.Location = new Point(82, 12);
-        _txtSearch.Width = 420;
+        var top = new TableLayoutPanel { Dock = DockStyle.Top, Height = 54, Padding = new Padding(12, 10, 12, 8), BackColor = AppTheme.SurfaceCard, ColumnCount = 4, RowCount = 1 };
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70f));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132f));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120f));
+
+        var lbl = new Label { Text = "Buscar:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
+        _txtSearch.Dock = DockStyle.Fill;
+        _txtSearch.Margin = new Padding(0, 4, 10, 0);
         _txtSearch.Font = new Font("Segoe UI", 10f);
         _txtSearch.TextChanged += (_, _) => ApplyFilter();
 
-        var btnSelect = new Button { Location = new Point(518, 10), Size = new Size(108, 30), Anchor = AnchorStyles.Top | AnchorStyles.Right };
+        var btnSelect = new Button { Dock = DockStyle.Fill, Margin = new Padding(4, 0, 6, 0) };
         AppTheme.StylePrimaryButton(btnSelect, AppIcon.Check, "Seleccionar", "Confirmar registro seleccionado");
         btnSelect.Click += (_, _) => ConfirmSelection();
 
-        var btnCancel = new Button { Location = new Point(632, 10), Size = new Size(100, 30), Anchor = AnchorStyles.Top | AnchorStyles.Right };
+        var btnCancel = new Button { Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 0) };
         AppTheme.StyleSecondaryButton(btnCancel, AppIcon.Cancel, "Cerrar", "Cancelar búsqueda");
         btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
 
-        top.Controls.AddRange([lbl, _txtSearch, btnSelect, btnCancel]);
+        top.Controls.Add(lbl, 0, 0);
+        top.Controls.Add(_txtSearch, 1, 0);
+        top.Controls.Add(btnSelect, 2, 0);
+        top.Controls.Add(btnCancel, 3, 0);
 
         AppTheme.StyleDataGrid(_grid);
         _grid.Dock = DockStyle.Fill;
@@ -75,6 +81,35 @@ public sealed class CatalogLookupDialog<T> : Form
                 ConfirmSelection();
             }
         };
+        _grid.CellMouseDown += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Right && e.RowIndex >= 0)
+            {
+                _grid.ClearSelection();
+                _grid.Rows[e.RowIndex].Selected = true;
+                _grid.CurrentCell = _grid.Rows[e.RowIndex].Cells[Math.Max(0, e.ColumnIndex)];
+            }
+        };
+
+        var cms = new ContextMenuStrip();
+        AppTheme.StyleContextMenu(cms);
+        var mSel = new ToolStripMenuItem("Seleccionar Registro", IconCatalog.Get(AppIcon.Check, 16, AppTheme.AccentEmerald));
+        mSel.Click += (_, _) => ConfirmSelection();
+        var mCopyCell = new ToolStripMenuItem("Copiar Celda", IconCatalog.Get(AppIcon.Copy, 16, AppTheme.NavyPrimary));
+        mCopyCell.Click += (_, _) =>
+        {
+            string val = _grid.CurrentCell?.Value?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(val)) Clipboard.SetText(val);
+        };
+        var mCopyRow = new ToolStripMenuItem("Copiar Fila Completa", IconCatalog.Get(AppIcon.Duplicate, 16, AppTheme.NavyDark));
+        mCopyRow.Click += (_, _) =>
+        {
+            if (_grid.CurrentRow is null) return;
+            string line = string.Join(" | ", _grid.CurrentRow.Cells.Cast<DataGridViewCell>().Select(c => c.Value?.ToString() ?? string.Empty));
+            if (!string.IsNullOrWhiteSpace(line)) Clipboard.SetText(line);
+        };
+        cms.Items.AddRange([mSel, new ToolStripSeparator(), mCopyCell, mCopyRow]);
+        _grid.ContextMenuStrip = cms;
 
         _columnSelectors = columns.Select(c => c.ValueSelector).ToArray();
         Controls.AddRange([_grid, top]);

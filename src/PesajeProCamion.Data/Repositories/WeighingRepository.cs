@@ -28,6 +28,23 @@ public sealed record TaraCamionReporte(
     DateTime? FechaTaraRegistrada,
     short DiasValidez);
 
+public enum FolioEstadoCheck
+{
+    Libre = 0,
+    EnProcesoTransito = 1,
+    HistoricoPesaje = 2,
+    AnuladoTransito = 3,
+    Invalido = 4
+}
+
+public sealed record FolioAvailabilityResult(
+    bool Disponible,
+    FolioEstadoCheck Estado,
+    int FolioEvaluado,
+    string? PatenteAsociada,
+    int ProximoFolioSugerido,
+    string Mensaje);
+
 /// <summary>Repositorio transaccional de tránsito, pesajes históricos, anulación, informes y auditoría.</summary>
 public sealed class WeighingRepository
 {
@@ -157,11 +174,22 @@ public sealed class WeighingRepository
         p.Patente = pat;
         p.Neto = WeighingCalculator.CalcularNeto(p.Bruto, p.Tara);
 
+        int originalTransitoFolio = p.FolioPesaje;
         return await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
             if (p.FolioPesaje <= 0)
             {
                 p.FolioPesaje = await AllocateNextPesajeFolioAsync(conn, tx, caps, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await using var existsCmd = new FbCommand("SELECT COUNT(*) FROM DBPESAJES WHERE FLPESAJE = @FP", conn, tx);
+                AddParam(existsCmd, "@FP", p.FolioPesaje);
+                int exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+                if (exists > 0)
+                {
+                    p.FolioPesaje = await AllocateNextPesajeFolioAsync(conn, tx, caps, ct).ConfigureAwait(false);
+                }
             }
 
             await using var insCmd = new FbCommand("""
@@ -217,7 +245,7 @@ public sealed class WeighingRepository
             await insCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
             await using var delTr = new FbCommand("DELETE FROM DBTRANSITO WHERE FLPESAJE = @FP", conn, tx);
-            AddParam(delTr, "@FP", p.FolioPesaje);
+            AddParam(delTr, "@FP", originalTransitoFolio > 0 ? originalTransitoFolio : p.FolioPesaje);
             await delTr.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
             // Actualizar tara histórica del camión en catálogo si hay tara válida
@@ -423,6 +451,199 @@ public sealed class WeighingRepository
         return rows.FirstOrDefault();
     }
 
+    public async Task<int> GetNextSuggestedFolioAsync(CancellationToken ct = default)
+    {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
+        return await PeekNextSafeFolioAsync(conn, null, caps, ct).ConfigureAwait(false);
+    }
+
+    public async Task<FolioAvailabilityResult> CheckFolioAvailabilityAsync(
+        int folioPesaje,
+        int? ignoreTransitoFolio = null,
+        int? ignorePesajeFolio = null,
+        CancellationToken ct = default)
+    {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
+        return await CheckFolioAvailabilityInternalAsync(conn, null, caps, folioPesaje, ignoreTransitoFolio, ignorePesajeFolio, ct).ConfigureAwait(false);
+    }
+
+    public async Task<int> CreateManualTicketAsync(Pesaje ticket, bool crearEnProceso, short usuarioId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(ticket);
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        string pat = ChileanValidators.NormalizarPatente(ticket.Patente);
+        if (!ChileanValidators.EsPatenteValida(pat))
+        {
+            throw new InvalidOperationException("La patente ingresada no es válida.");
+        }
+
+        ticket.Patente = pat;
+        ticket.Acoplado = ChileanValidators.NormalizarPatente(ticket.Acoplado);
+
+        return await _db.ExecuteInTransactionAsync(async (conn, tx) =>
+        {
+            if (ticket.FolioPesaje > 0)
+            {
+                FolioAvailabilityResult chk = await CheckFolioAvailabilityInternalAsync(conn, tx, caps, ticket.FolioPesaje, null, null, ct).ConfigureAwait(false);
+                if (!chk.Disponible)
+                {
+                    throw new InvalidOperationException(chk.Mensaje);
+                }
+                await AdvanceFolioPointersIfNeededAsync(conn, tx, caps, ticket.FolioPesaje, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                ticket.FolioPesaje = await AllocateNextPesajeFolioAsync(conn, tx, caps, ct).ConfigureAwait(false);
+            }
+
+            if (crearEnProceso)
+            {
+                await using var trCmd = new FbCommand("""
+                    INSERT INTO DBTRANSITO (
+                        FLPESAJE, PATENTE, ACOPLADO, PRODUCTO, CLIENTE, ORIGEN, DESTINO, GDESPACHO,
+                        NETOINF, FECHAING, HORAING, BRUTO, TARA, TMOP, LARGO, MAXBRUTO, CHOFER,
+                        OBSERVA1, TRANSP, TPESAJE, SAVEDTOSERVER, USUAING, TRASPASO)
+                    VALUES (
+                        @FP, @PAT, @ACO, @PR, @CL, @OR, @DE, @GD,
+                        @NI, @FI, @HI, @BR, @TA, @TM, @LA, @MB, @CH,
+                        @OB1, @TR, @TP, @SV, @UI, @TRS)
+                    """, conn, tx);
+                AddParam(trCmd, "@FP", ticket.FolioPesaje);
+                AddParam(trCmd, "@PAT", ticket.Patente);
+                AddParam(trCmd, "@ACO", ticket.Acoplado);
+                AddParam(trCmd, "@PR", ticket.Producto.Trim());
+                AddParam(trCmd, "@CL", ticket.Cliente.Trim());
+                AddParam(trCmd, "@OR", ticket.Origen.Trim());
+                AddParam(trCmd, "@DE", ticket.Destino.Trim());
+                AddParam(trCmd, "@GD", ticket.GuiaDespacho.Trim());
+                AddParam(trCmd, "@NI", ticket.NetoInformado);
+                AddParam(trCmd, "@FI", ticket.FechaIngreso.Date);
+                AddParam(trCmd, "@HI", ticket.HoraIngreso);
+                AddParam(trCmd, "@BR", ticket.Bruto);
+                AddParam(trCmd, "@TA", ticket.Tara);
+                AddParam(trCmd, "@TM", ticket.TipoMop);
+                AddParam(trCmd, "@LA", ticket.Largo);
+                AddParam(trCmd, "@MB", ticket.MaxBruto);
+                AddParam(trCmd, "@CH", ticket.Chofer.Trim());
+                AddParam(trCmd, "@OB1", ticket.Observacion1.Trim());
+                AddParam(trCmd, "@TR", ticket.Transportista.Trim());
+                AddParam(trCmd, "@TP", (short)ticket.TipoPesaje);
+                AddParam(trCmd, "@SV", ticket.SavedToServer);
+                AddParam(trCmd, "@UI", usuarioId);
+                AddParam(trCmd, "@TRS", ticket.Traspaso);
+                await trCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+                await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBTRANSITO", ticket.FolioPesaje.ToString(CultureInfo.InvariantCulture), "CREAR_EN_PROCESO", $"Patente={pat}, Bruto={ticket.Bruto}, Tara={ticket.Tara}", ct).ConfigureAwait(false);
+                return ticket.FolioPesaje;
+            }
+
+            ticket.Neto = ticket.Anulado ? 0 : WeighingCalculator.CalcularNeto(ticket.Bruto, ticket.Tara);
+            await using var insCmd = new FbCommand("""
+                INSERT INTO DBPESAJES (
+                    FLPESAJE, PATENTE, ACOPLADO, FLPESAJEMOP, PRODUCTO, CLIENTE, ORIGEN, DESTINO, GDESPACHO,
+                    NETOINF, FECHAING, HORAING, FECHASAL, HORASAL, FECHAMOD, HORAMOD,
+                    BRUTO, TARA, NETO, TMOP, LARGO, MAXBRUTO, ESTADOMOP, CHOFER, TRASPASO,
+                    OBSERVA1, OBSERVA2, TRANSP, TARAREG, TPESAJE, SAVEDTOSERVER,
+                    USUAING, USUASAL, USUAMOD, USUADEL, ANULADO)
+                VALUES (
+                    @FP, @PAT, @ACO, @FM, @PR, @CL, @OR, @DE, @GD,
+                    @NI, @FI, @HI, @FS, @HS, @FMOD, @HMOD,
+                    @BR, @TA, @NE, @TM, @LA, @MB, @EM, @CH, @TRS,
+                    @OB1, @OB2, @TR, @TRG, @TP, @SV,
+                    @UI, @US, @UM, @UD, @AN)
+                """, conn, tx);
+            AddParam(insCmd, "@FP", ticket.FolioPesaje);
+            AddParam(insCmd, "@PAT", ticket.Patente);
+            AddParam(insCmd, "@ACO", ticket.Acoplado);
+            AddParam(insCmd, "@FM", ticket.FolioPesajeMop);
+            AddParam(insCmd, "@PR", ticket.Producto.Trim());
+            AddParam(insCmd, "@CL", ticket.Cliente.Trim());
+            AddParam(insCmd, "@OR", ticket.Origen.Trim());
+            AddParam(insCmd, "@DE", ticket.Destino.Trim());
+            AddParam(insCmd, "@GD", ticket.GuiaDespacho.Trim());
+            AddParam(insCmd, "@NI", ticket.NetoInformado);
+            AddParam(insCmd, "@FI", ticket.FechaIngreso.Date);
+            AddParam(insCmd, "@HI", ticket.HoraIngreso);
+            AddParam(insCmd, "@FS", ticket.FechaSalida.Date);
+            AddParam(insCmd, "@HS", ticket.HoraSalida);
+            AddParam(insCmd, "@FMOD", DateTime.Today);
+            AddParam(insCmd, "@HMOD", DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture));
+            AddParam(insCmd, "@BR", ticket.Bruto);
+            AddParam(insCmd, "@TA", ticket.Tara);
+            AddParam(insCmd, "@NE", ticket.Neto);
+            AddParam(insCmd, "@TM", ticket.TipoMop);
+            AddParam(insCmd, "@LA", ticket.Largo);
+            AddParam(insCmd, "@MB", ticket.MaxBruto);
+            AddParam(insCmd, "@EM", ((short)ticket.EstadoMop).ToString(CultureInfo.InvariantCulture));
+            AddParam(insCmd, "@CH", ticket.Chofer.Trim());
+            AddParam(insCmd, "@TRS", ticket.Traspaso);
+            AddParam(insCmd, "@OB1", ticket.Observacion1.Trim());
+            AddParam(insCmd, "@OB2", ticket.Observacion2.Trim());
+            AddParam(insCmd, "@TR", ticket.Transportista.Trim());
+            AddParam(insCmd, "@TRG", ticket.TaraRegistrada ? "1" : "0");
+            AddParam(insCmd, "@TP", (short)ticket.TipoPesaje);
+            AddParam(insCmd, "@SV", ticket.SavedToServer);
+            AddParam(insCmd, "@UI", usuarioId);
+            AddParam(insCmd, "@US", usuarioId);
+            AddParam(insCmd, "@UM", usuarioId);
+            AddParam(insCmd, "@UD", ticket.Anulado ? usuarioId : (short)0);
+            AddParam(insCmd, "@AN", ticket.Anulado ? "1" : "0");
+            await insCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+            await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBPESAJES", ticket.FolioPesaje.ToString(CultureInfo.InvariantCulture), "CREAR_TICKET", $"Patente={pat}, Bruto={ticket.Bruto}, Tara={ticket.Tara}, Neto={ticket.Neto}", ct).ConfigureAwait(false);
+            return ticket.FolioPesaje;
+        }, ct).ConfigureAwait(false);
+    }
+
+    public async Task ModificarTransitoAsync(RegistroTransito tr, short usuarioId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(tr);
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        string pat = ChileanValidators.NormalizarPatente(tr.Patente);
+        if (!ChileanValidators.EsPatenteValida(pat))
+        {
+            throw new InvalidOperationException("La patente ingresada no es válida.");
+        }
+
+        await _db.ExecuteInTransactionAsync(async (conn, tx) =>
+        {
+            await using var cmd = new FbCommand("""
+                UPDATE DBTRANSITO SET
+                    PATENTE = @PAT, ACOPLADO = @ACO, PRODUCTO = @PR, CLIENTE = @CL,
+                    ORIGEN = @OR, DESTINO = @DE, GDESPACHO = @GD, NETOINF = @NI,
+                    FECHAING = @FI, HORAING = @HI, BRUTO = @BR, TARA = @TA,
+                    CHOFER = @CH, OBSERVA1 = @OB1, TRANSP = @TR, TPESAJE = @TP
+                WHERE FLPESAJE = @FP
+                """, conn, tx);
+            AddParam(cmd, "@PAT", pat);
+            AddParam(cmd, "@ACO", ChileanValidators.NormalizarPatente(tr.Acoplado));
+            AddParam(cmd, "@PR", tr.Producto.Trim());
+            AddParam(cmd, "@CL", tr.Cliente.Trim());
+            AddParam(cmd, "@OR", tr.Origen.Trim());
+            AddParam(cmd, "@DE", tr.Destino.Trim());
+            AddParam(cmd, "@GD", tr.GuiaDespacho.Trim());
+            AddParam(cmd, "@NI", tr.NetoInformado);
+            AddParam(cmd, "@FI", tr.FechaIngreso.Date);
+            AddParam(cmd, "@HI", tr.HoraIngreso);
+            AddParam(cmd, "@BR", tr.Bruto);
+            AddParam(cmd, "@TA", tr.Tara);
+            AddParam(cmd, "@CH", tr.Chofer.Trim());
+            AddParam(cmd, "@OB1", tr.Observacion1.Trim());
+            AddParam(cmd, "@TR", tr.Transportista.Trim());
+            AddParam(cmd, "@TP", (short)tr.TipoPesaje);
+            AddParam(cmd, "@FP", tr.FolioPesaje);
+            int affected = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            if (affected == 0)
+            {
+                throw new InvalidOperationException($"El ticket en proceso #{tr.FolioPesaje} ya no se encuentra en tránsito.");
+            }
+
+            await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "TRANSITO", "DBTRANSITO", tr.FolioPesaje.ToString(CultureInfo.InvariantCulture), "MODIFICAR", $"Patente={pat}, Bruto={tr.Bruto}, Tara={tr.Tara}", ct).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
+    }
+
     public async Task ModificarPesajeAsync(Pesaje p, short usuarioId, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(p);
@@ -439,9 +660,10 @@ public sealed class WeighingRepository
                 UPDATE DBPESAJES SET
                     PATENTE = @PAT, ACOPLADO = @ACO, PRODUCTO = @PR, CLIENTE = @CL,
                     ORIGEN = @OR, DESTINO = @DE, GDESPACHO = @GD, NETOINF = @NI,
+                    FECHAING = @FI, HORAING = @HI, FECHASAL = @FS, HORASAL = @HS,
                     FECHAMOD = @FMOD, HORAMOD = @HMOD, BRUTO = @BR, TARA = @TA, NETO = @NE,
                     CHOFER = @CH, OBSERVA1 = @OB1, OBSERVA2 = @OB2, TRANSP = @TR,
-                    TPESAJE = @TP, USUAMOD = @UM
+                    TARAREG = @TRG, TPESAJE = @TP, ANULADO = @AN, USUAMOD = @UM
                 WHERE FLPESAJE = @FP
                 """, conn, tx);
             AddParam(cmd, "@PAT", ChileanValidators.NormalizarPatente(p.Patente));
@@ -452,6 +674,10 @@ public sealed class WeighingRepository
             AddParam(cmd, "@DE", p.Destino.Trim());
             AddParam(cmd, "@GD", p.GuiaDespacho.Trim());
             AddParam(cmd, "@NI", p.NetoInformado);
+            AddParam(cmd, "@FI", p.FechaIngreso.Date);
+            AddParam(cmd, "@HI", p.HoraIngreso);
+            AddParam(cmd, "@FS", p.FechaSalida.Date);
+            AddParam(cmd, "@HS", p.HoraSalida);
             AddParam(cmd, "@FMOD", p.FechaModificacion);
             AddParam(cmd, "@HMOD", p.HoraModificacion);
             AddParam(cmd, "@BR", p.Bruto);
@@ -461,10 +687,16 @@ public sealed class WeighingRepository
             AddParam(cmd, "@OB1", p.Observacion1.Trim());
             AddParam(cmd, "@OB2", p.Observacion2.Trim());
             AddParam(cmd, "@TR", p.Transportista.Trim());
+            AddParam(cmd, "@TRG", p.TaraRegistrada ? "1" : "0");
             AddParam(cmd, "@TP", (short)p.TipoPesaje);
+            AddParam(cmd, "@AN", p.Anulado ? "1" : "0");
             AddParam(cmd, "@UM", usuarioId);
             AddParam(cmd, "@FP", p.FolioPesaje);
-            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            int affected = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            if (affected == 0)
+            {
+                throw new InvalidOperationException($"No se encontró el ticket #{p.FolioPesaje} en histórico.");
+            }
 
             await SecurityRepository.InsertAuditInternalAsync(conn, tx, caps, usuarioId, "GESTION", "DBPESAJES", p.FolioPesaje.ToString(CultureInfo.InvariantCulture), "MODIFICAR", $"Patente={p.Patente}, Bruto={p.Bruto}, Tara={p.Tara}, Neto={p.Neto}", ct).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
@@ -575,31 +807,136 @@ public sealed class WeighingRepository
         return list;
     }
 
+    private static async Task<int> PeekNextSafeFolioAsync(FbConnection conn, FbTransaction? tx, DatabaseCapabilities caps, CancellationToken ct)
+    {
+        await using var fCmd = new FbCommand(
+            """
+            SELECT COALESCE((SELECT FIRST 1 FLPESAJE FROM DBFOLIOS), 1),
+                   COALESCE((SELECT MAX(FLPESAJE) FROM DBPESAJES WHERE FLPESAJE IS NOT NULL), 0),
+                   COALESCE((SELECT MAX(FLPESAJE) FROM DBTRANSITO WHERE FLPESAJE IS NOT NULL), 0),
+                   COALESCE((SELECT MAX(FLPESAJE) FROM DBTRAN_ANUL WHERE FLPESAJE IS NOT NULL), 0)
+            FROM RDB$DATABASE
+            """, conn, tx);
+        await using FbDataReader fr = await fCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await fr.ReadAsync(ct).ConfigureAwait(false);
+        int curFol = Convert.ToInt32(fr.GetValue(0), CultureInfo.InvariantCulture);
+        int maxP = Convert.ToInt32(fr.GetValue(1), CultureInfo.InvariantCulture);
+        int maxT = Convert.ToInt32(fr.GetValue(2), CultureInfo.InvariantCulture);
+        int maxA = Convert.ToInt32(fr.GetValue(3), CultureInfo.InvariantCulture);
+        await fr.CloseAsync().ConfigureAwait(false);
+
+        int genCurrent = 0;
+        if (caps.HasGenPesaje)
+        {
+            await using var gCmd = new FbCommand("SELECT GEN_ID(GEN_FLPESAJE, 0) FROM RDB$DATABASE", conn, tx);
+            genCurrent = Convert.ToInt32(await gCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        }
+
+        int maxUsed = Math.Max(maxP, Math.Max(maxT, maxA));
+        return Math.Max(Math.Max(curFol, genCurrent + 1), maxUsed + 1);
+    }
+
+    private static async Task<FolioAvailabilityResult> CheckFolioAvailabilityInternalAsync(
+        FbConnection conn,
+        FbTransaction? tx,
+        DatabaseCapabilities caps,
+        int folioPesaje,
+        int? ignoreTransitoFolio,
+        int? ignorePesajeFolio,
+        CancellationToken ct)
+    {
+        int nextFree = await PeekNextSafeFolioAsync(conn, tx, caps, ct).ConfigureAwait(false);
+        if (folioPesaje <= 0)
+        {
+            return new FolioAvailabilityResult(false, FolioEstadoCheck.Invalido, folioPesaje, null, nextFree, $"El folio debe ser mayor a 0. Próximo sugerido: #{nextFree}.");
+        }
+
+        if (ignoreTransitoFolio != folioPesaje)
+        {
+            await using var trCmd = new FbCommand("SELECT FIRST 1 PATENTE FROM DBTRANSITO WHERE FLPESAJE = @FP", conn, tx);
+            AddParam(trCmd, "@FP", folioPesaje);
+            object? patTr = await trCmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+            if (patTr is not null and not DBNull)
+            {
+                string pat = Convert.ToString(patTr, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+                return new FolioAvailabilityResult(false, FolioEstadoCheck.EnProcesoTransito, folioPesaje, pat, nextFree,
+                    $"El folio #{folioPesaje} pertenece a un vehículo EN PROCESO en tránsito ({pat}). Se respeta sin sobreescribir; use #{nextFree}.");
+            }
+        }
+
+        if (ignorePesajeFolio != folioPesaje)
+        {
+            await using var pCmd = new FbCommand("SELECT FIRST 1 PATENTE FROM DBPESAJES WHERE FLPESAJE = @FP", conn, tx);
+            AddParam(pCmd, "@FP", folioPesaje);
+            object? patP = await pCmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+            if (patP is not null and not DBNull)
+            {
+                string pat = Convert.ToString(patP, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+                return new FolioAvailabilityResult(false, FolioEstadoCheck.HistoricoPesaje, folioPesaje, pat, nextFree,
+                    $"El folio #{folioPesaje} ya existe en tickets cerrados ({pat}). Próximo folio libre: #{nextFree}.");
+            }
+        }
+
+        await using var aCmd = new FbCommand("SELECT FIRST 1 PATENTE FROM DBTRAN_ANUL WHERE FLPESAJE = @FP", conn, tx);
+        AddParam(aCmd, "@FP", folioPesaje);
+        object? patA = await aCmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        if (patA is not null and not DBNull)
+        {
+            string pat = Convert.ToString(patA, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+            return new FolioAvailabilityResult(false, FolioEstadoCheck.AnuladoTransito, folioPesaje, pat, nextFree,
+                $"El folio #{folioPesaje} pertenece a un tránsito anulado ({pat}). Próximo folio libre: #{nextFree}.");
+        }
+
+        return new FolioAvailabilityResult(true, FolioEstadoCheck.Libre, folioPesaje, null, nextFree, $"Folio #{folioPesaje} disponible y libre de conflictos.");
+    }
+
+    private static async Task AdvanceFolioPointersIfNeededAsync(FbConnection conn, FbTransaction tx, DatabaseCapabilities caps, int assignedFolio, CancellationToken ct)
+    {
+        if (caps.HasGenPesaje)
+        {
+            await using var gCmd = new FbCommand("SELECT GEN_ID(GEN_FLPESAJE, 0) FROM RDB$DATABASE", conn, tx);
+            int curGen = Convert.ToInt32(await gCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+            if (curGen < assignedFolio)
+            {
+                await Schema.FirebirdSchemaManager.SynchronizeGeneratorAsync(conn, tx, "GEN_FLPESAJE", assignedFolio, ct).ConfigureAwait(false);
+            }
+        }
+
+        string readFolSql = caps.HasFoliosId ? "SELECT FIRST 1 FLPESAJE FROM DBFOLIOS WHERE ID = 1" : "SELECT FIRST 1 FLPESAJE FROM DBFOLIOS";
+        await using var rfCmd = new FbCommand(readFolSql, conn, tx);
+        object? rf = await rfCmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        int curDbFol = rf is null or DBNull ? 1 : Convert.ToInt32(rf, CultureInfo.InvariantCulture);
+        if (curDbFol <= assignedFolio)
+        {
+            string updSql = caps.HasFoliosId ? "UPDATE DBFOLIOS SET FLPESAJE = @NEXT WHERE ID = 1" : "UPDATE DBFOLIOS SET FLPESAJE = @NEXT";
+            await using var folCmd = new FbCommand(updSql, conn, tx);
+            AddParam(folCmd, "@NEXT", assignedFolio + 1);
+            await folCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+    }
+
     private static async Task<int> AllocateNextPesajeFolioAsync(FbConnection conn, FbTransaction tx, DatabaseCapabilities caps, CancellationToken ct)
     {
-        int folio;
+        int safeMin = await PeekNextSafeFolioAsync(conn, tx, caps, ct).ConfigureAwait(false);
+        int folio = safeMin;
         if (caps.HasGenPesaje)
         {
             await using var genCmd = new FbCommand("SELECT NEXT VALUE FOR GEN_FLPESAJE FROM RDB$DATABASE", conn, tx);
-            folio = Convert.ToInt32(await genCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
-        }
-        else
-        {
-            await using var fCmd = new FbCommand("SELECT COALESCE((SELECT FIRST 1 FLPESAJE FROM DBFOLIOS), 1), COALESCE((SELECT MAX(FLPESAJE) FROM DBPESAJES WHERE FLPESAJE IS NOT NULL), 0), COALESCE((SELECT MAX(FLPESAJE) FROM DBTRANSITO WHERE FLPESAJE IS NOT NULL), 0) FROM RDB$DATABASE", conn, tx);
-            await using FbDataReader fr = await fCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-            await fr.ReadAsync(ct).ConfigureAwait(false);
-            int curFol = Convert.ToInt32(fr.GetValue(0), CultureInfo.InvariantCulture);
-            int maxP = Convert.ToInt32(fr.GetValue(1), CultureInfo.InvariantCulture);
-            int maxT = Convert.ToInt32(fr.GetValue(2), CultureInfo.InvariantCulture);
-            folio = Math.Max(curFol, Math.Max(maxP, maxT) + 1);
+            int genVal = Convert.ToInt32(await genCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+            folio = Math.Max(genVal, safeMin);
         }
 
-        string updSql = caps.HasFoliosId
-            ? "UPDATE DBFOLIOS SET FLPESAJE = @NEXT WHERE ID = 1"
-            : "UPDATE DBFOLIOS SET FLPESAJE = @NEXT";
-        await using var folCmd = new FbCommand(updSql, conn, tx);
-        AddParam(folCmd, "@NEXT", folio + 1);
-        await folCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        while (true)
+        {
+            FolioAvailabilityResult avail = await CheckFolioAvailabilityInternalAsync(conn, tx, caps, folio, null, null, ct).ConfigureAwait(false);
+            if (avail.Disponible)
+            {
+                break;
+            }
+            folio = Math.Max(folio + 1, avail.ProximoFolioSugerido);
+        }
+
+        await AdvanceFolioPointersIfNeededAsync(conn, tx, caps, folio, ct).ConfigureAwait(false);
         return folio;
     }
 

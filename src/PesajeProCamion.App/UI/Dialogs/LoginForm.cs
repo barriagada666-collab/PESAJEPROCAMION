@@ -9,8 +9,8 @@ using PesajeProCamion.Domain.Security;
 namespace PesajeProCamion.App.UI.Dialogs;
 
 /// <summary>
-/// Diálogo corporativo de inicio de sesión inspirado en carrusel_mockups + Logo Cambiaso,
-/// con conexión directa a BD local/remota y visor de logs de errores.
+/// Diálogo corporativo responsivo de inicio de sesión con soporte para selección o ingreso manual
+/// de usuario (ej. barriagada), selector de BD remota y visor de logs.
 /// </summary>
 public sealed class LoginForm : Form
 {
@@ -18,6 +18,7 @@ public sealed class LoginForm : Form
     private readonly ToolTip _toolTip = new();
     private readonly ComboBox _cmbUsuarios = new();
     private readonly TextBox _txtPassword = new();
+    private readonly Button _btnTogglePw = new();
     private readonly RadioButton _rbPesaje = new();
     private readonly RadioButton _rbGestion = new();
     private readonly RadioButton _rbUnificado = new();
@@ -26,6 +27,7 @@ public sealed class LoginForm : Form
     private readonly Button _btnConexionBd = new();
     private readonly Button _btnLogs = new();
     private readonly Button _btnSalir = new();
+    private readonly Label _lblRemoteBadge = new();
     private readonly Label _lblStatus = new();
     private List<Usuario> _usuarios = [];
 
@@ -37,7 +39,7 @@ public sealed class LoginForm : Form
         Load += async (_, _) => await LoadUsersAsync();
     }
 
-    public int SelectedModuleId { get; private set; } = 0; // 2=Pesaje, 1=Gestión, 0=Suite Completa
+    public int SelectedModuleId { get; private set; } = 0;
 
     protected override void Dispose(bool disposing)
     {
@@ -51,30 +53,35 @@ public sealed class LoginForm : Form
     private void InitializeUi()
     {
         Text = "Inicio de Sesión — PesajeProCamion";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(640, 420);
+        AppTheme.ConfigureResponsiveDialog(this, 688, 464, 650, 440, resizable: true);
         BackColor = AppTheme.NavyDark;
-        AppTheme.ApplyFormIcon(this);
         KeyPreview = true;
 
-        var backdrop = new Panel { Dock = DockStyle.Fill };
+        var backdrop = new Panel { Dock = DockStyle.Fill, Padding = new Padding(26, 20, 26, 16) };
         backdrop.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, backdrop.ClientRectangle, includeGoldBottomAccent: false);
 
-        // Tarjeta central estilizada igual que mockup 02/40
+        var outerLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent
+        };
+        outerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        outerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38f));
+
+        // Tarjeta central responsiva
         var card = new Panel
         {
-            Location = new Point(36, 26),
-            Size = new Size(568, 336),
+            Dock = DockStyle.Fill,
             BackColor = AppTheme.BackgroundLight,
-            BorderStyle = BorderStyle.FixedSingle
+            BorderStyle = BorderStyle.FixedSingle,
+            Margin = new Padding(0, 0, 0, 8)
         };
 
-        var cardHeader = new Panel { Dock = DockStyle.Top, Height = 40 };
+        var cardHeader = new Panel { Dock = DockStyle.Top, Height = 42 };
         cardHeader.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, cardHeader.ClientRectangle, includeGoldBottomAccent: true);
-        var lblHead = new Label
+        cardHeader.Controls.Add(new Label
         {
             Text = "  Inicio de Sesión Corporativo — Acceso Autorizado",
             Dock = DockStyle.Fill,
@@ -82,31 +89,34 @@ public sealed class LoginForm : Form
             BackColor = Color.Transparent,
             Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft
-        };
-        cardHeader.Controls.Add(lblHead);
+        });
 
-        var leftCol = new Panel { Location = new Point(0, 40), Size = new Size(168, 296) };
+        var cardBody = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1
+        };
+        cardBody.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 182f));
+        cardBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        cardBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        var leftCol = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14) };
         leftCol.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, leftCol.ClientRectangle, includeGoldBottomAccent: false);
 
-        var logoCard = new Panel
-        {
-            Location = new Point(16, 26),
-            Size = new Size(136, 84),
-            BackColor = Color.White
-        };
-        var picLogo = new PictureBox
+        var logoCard = new Panel { Dock = DockStyle.Top, Height = 86, BackColor = Color.White };
+        logoCard.Controls.Add(new PictureBox
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(8),
             SizeMode = PictureBoxSizeMode.Zoom,
             Image = IconCatalog.GetCorporateLogo() ?? IconCatalog.RenderTruckBadge(120, 68)
-        };
-        logoCard.Controls.Add(picLogo);
+        });
 
         var lblAccess = new Label
         {
-            Location = new Point(12, 128),
-            Size = new Size(144, 52),
+            Dock = DockStyle.Top,
+            Height = 56,
             Text = "Pesaje Comercial\r\ny Normativa M.O.P.",
             TextAlign = ContentAlignment.MiddleCenter,
             ForeColor = AppTheme.GoldAccent,
@@ -114,52 +124,51 @@ public sealed class LoginForm : Form
             Font = new Font("Segoe UI", 9.25f, FontStyle.Bold)
         };
 
-        var lblRemoteBadge = new Label
-        {
-            Location = new Point(12, 200),
-            Size = new Size(144, 72),
-            Text = $"Servidor:\r\n{_services.DatabaseSettings.DataSource}\r\nPuerto {_services.DatabaseSettings.Port}",
-            TextAlign = ContentAlignment.TopCenter,
-            ForeColor = Color.LightSteelBlue,
-            BackColor = Color.Transparent,
-            Font = new Font("Segoe UI", 8.25f)
-        };
-        leftCol.Controls.AddRange([logoCard, lblAccess, lblRemoteBadge]);
+        _lblRemoteBadge.Dock = DockStyle.Fill;
+        _lblRemoteBadge.Text = $"Servidor:\r\n{_services.DatabaseSettings.DataSource}\r\nPuerto {_services.DatabaseSettings.Port}";
+        _lblRemoteBadge.TextAlign = ContentAlignment.TopCenter;
+        _lblRemoteBadge.ForeColor = Color.LightSteelBlue;
+        _lblRemoteBadge.BackColor = Color.Transparent;
+        _lblRemoteBadge.Font = new Font("Segoe UI", 8.25f);
 
-        var rightCol = new Panel
-        {
-            Location = new Point(168, 40),
-            Size = new Size(400, 296),
-            BackColor = AppTheme.BackgroundLight
-        };
+        leftCol.Controls.AddRange([_lblRemoteBadge, lblAccess, logoCard]);
 
-        var lblUser = new Label
+        var rightCol = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.BackgroundLight, Padding = new Padding(18, 12, 18, 12), AutoScroll = true };
+        var formLayout = new TableLayoutPanel
         {
-            Text = "Usuario",
-            Location = new Point(22, 16),
-            AutoSize = true,
-            Font = AppTheme.FontBodyBold,
-            ForeColor = AppTheme.TextPrimary
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 7
         };
-        _cmbUsuarios.Location = new Point(22, 38);
-        _cmbUsuarios.Width = 354;
-        _cmbUsuarios.DropDownStyle = ComboBoxStyle.DropDownList;
+        formLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
+        formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f));
+        formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 62f));
+        formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44f));
+        formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42f));
+
+        var lblUser = new Label { Text = "Usuario (seleccione o escriba nombre)", Dock = DockStyle.Fill, Font = AppTheme.FontBodyBold, ForeColor = AppTheme.TextPrimary, TextAlign = ContentAlignment.BottomLeft };
+        _cmbUsuarios.Dock = DockStyle.Fill;
+        _cmbUsuarios.DropDownStyle = ComboBoxStyle.DropDown;
+        _cmbUsuarios.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
+        _cmbUsuarios.AutoCompleteSource = AutoCompleteSource.ListItems;
         _cmbUsuarios.Font = new Font("Segoe UI", 10f);
 
-        var lblPw = new Label
-        {
-            Text = "Contraseña",
-            Location = new Point(22, 74),
-            AutoSize = true,
-            Font = AppTheme.FontBodyBold,
-            ForeColor = AppTheme.TextPrimary
-        };
-        _txtPassword.Location = new Point(22, 96);
-        _txtPassword.Width = 200;
+        var lblPw = new Label { Text = "Contraseña", Dock = DockStyle.Fill, Font = AppTheme.FontBodyBold, ForeColor = AppTheme.TextPrimary, TextAlign = ContentAlignment.BottomLeft };
+
+        var pwRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
+        pwRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        pwRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40f));
+        pwRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 148f));
+        pwRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        _txtPassword.Dock = DockStyle.Fill;
+        _txtPassword.Margin = new Padding(0, 4, 6, 2);
         _txtPassword.UseSystemPasswordChar = true;
         _txtPassword.MaxLength = 32;
         _txtPassword.Font = new Font("Segoe UI", 10f);
-        _txtPassword.CharacterCasing = CharacterCasing.Upper;
         _txtPassword.KeyDown += async (_, e) =>
         {
             if (e.KeyCode == Keys.Enter)
@@ -169,72 +178,92 @@ public sealed class LoginForm : Form
             }
         };
 
-        _btnCambiarPw.Location = new Point(232, 94);
-        _btnCambiarPw.Size = new Size(144, 28);
-        AppTheme.StyleSecondaryButton(_btnCambiarPw, AppIcon.Key, "Cambiar Clave", "Cambiar contraseña del usuario seleccionado", null, _toolTip);
+        _btnTogglePw.Dock = DockStyle.Fill;
+        _btnTogglePw.Margin = new Padding(0, 2, 6, 2);
+        AppTheme.StyleSecondaryButton(_btnTogglePw, AppIcon.Eye, string.Empty, "Mostrar u ocultar contraseña", AppTheme.NavyDark, _toolTip);
+        _btnTogglePw.Click += (_, _) => _txtPassword.UseSystemPasswordChar = !_txtPassword.UseSystemPasswordChar;
+
+        _btnCambiarPw.Dock = DockStyle.Fill;
+        _btnCambiarPw.Margin = new Padding(0, 2, 0, 2);
+        AppTheme.StyleSecondaryButton(_btnCambiarPw, AppIcon.Key, "Cambiar Clave", "Cambiar contraseña del usuario ingresado", null, _toolTip);
         _btnCambiarPw.Click += async (_, _) => await OpenChangePasswordAsync();
+
+        pwRow.Controls.Add(_txtPassword, 0, 0);
+        pwRow.Controls.Add(_btnTogglePw, 1, 0);
+        pwRow.Controls.Add(_btnCambiarPw, 2, 0);
 
         var grpModulo = new GroupBox
         {
             Text = "Módulo de Trabajo",
-            Location = new Point(22, 134),
-            Size = new Size(354, 54),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 4, 0, 4),
             Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
             ForeColor = AppTheme.NavyDark
         };
-        _rbPesaje.Text = "Pesaje"; _rbPesaje.Location = new Point(12, 22); _rbPesaje.AutoSize = true; _rbPesaje.Font = AppTheme.FontBody;
-        _rbGestion.Text = "Gestión"; _rbGestion.Location = new Point(108, 22); _rbGestion.AutoSize = true; _rbGestion.Font = AppTheme.FontBody;
-        _rbUnificado.Text = "Suite Completa"; _rbUnificado.Location = new Point(206, 22); _rbUnificado.AutoSize = true; _rbUnificado.Checked = true; _rbUnificado.Font = AppTheme.FontBody;
-        grpModulo.Controls.AddRange([_rbPesaje, _rbGestion, _rbUnificado]);
+        var modFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(8, 2, 8, 2), WrapContents = false };
+        _rbPesaje.Text = "Pesaje"; _rbPesaje.AutoSize = true; _rbPesaje.Font = AppTheme.FontBody; _rbPesaje.Margin = new Padding(4, 4, 14, 2);
+        _rbGestion.Text = "Gestión"; _rbGestion.AutoSize = true; _rbGestion.Font = AppTheme.FontBody; _rbGestion.Margin = new Padding(4, 4, 14, 2);
+        _rbUnificado.Text = "Suite Completa"; _rbUnificado.AutoSize = true; _rbUnificado.Checked = true; _rbUnificado.Font = AppTheme.FontBody; _rbUnificado.Margin = new Padding(4, 4, 4, 2);
+        modFlow.Controls.AddRange([_rbPesaje, _rbGestion, _rbUnificado]);
+        grpModulo.Controls.Add(modFlow);
 
-        _btnIngresar.Location = new Point(22, 200);
-        _btnIngresar.Size = new Size(116, 36);
+        var btnRow1 = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 4, 0, 0) };
+        _btnIngresar.Size = new Size(124, 36);
         AppTheme.StylePrimaryButton(_btnIngresar, AppIcon.Check, "Ingresar", "Autenticar e ingresar al sistema", _toolTip);
         _btnIngresar.Click += async (_, _) => await AuthenticateAsync();
 
-        _btnConexionBd.Location = new Point(146, 200);
-        _btnConexionBd.Size = new Size(124, 36);
+        _btnConexionBd.Size = new Size(144, 36);
+        _btnConexionBd.Margin = new Padding(8, 3, 8, 3);
         AppTheme.StyleSecondaryButton(_btnConexionBd, AppIcon.Database, "Servidor BD", "Configurar conexión local o remota y probar ruta UNC/TCP", null, _toolTip);
         _btnConexionBd.Click += async (_, _) =>
         {
             using var dlg = new DatabaseConnectionForm(_services);
             if (dlg.ShowDialog(this) == DialogResult.OK)
             {
-                lblRemoteBadge.Text = $"Servidor:\r\n{_services.DatabaseSettings.DataSource}\r\nPuerto {_services.DatabaseSettings.Port}";
+                _lblRemoteBadge.Text = $"Servidor:\r\n{_services.DatabaseSettings.DataSource}\r\nPuerto {_services.DatabaseSettings.Port}";
                 await LoadUsersAsync();
             }
         };
 
-        _btnSalir.Location = new Point(278, 200);
-        _btnSalir.Size = new Size(98, 36);
+        _btnSalir.Size = new Size(112, 36);
         AppTheme.StyleDangerButton(_btnSalir, AppIcon.Power, "Salir", "Cerrar la aplicación", _toolTip);
         _btnSalir.Click += (_, _) =>
         {
             DialogResult = DialogResult.Cancel;
             Close();
         };
+        btnRow1.Controls.AddRange([_btnIngresar, _btnConexionBd, _btnSalir]);
 
-        _btnLogs.Location = new Point(22, 244);
-        _btnLogs.Size = new Size(156, 32);
+        var btnRow2 = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 4, 0, 0) };
+        _btnLogs.Size = new Size(170, 34);
         AppTheme.StyleSecondaryButton(_btnLogs, AppIcon.Logs, "Logs de Errores", "Abrir diagnóstico y registro de errores", AppTheme.AccentAmber, _toolTip);
         _btnLogs.Click += (_, _) => { using var f = new ErrorLogViewerDialog(); f.ShowDialog(this); };
+        btnRow2.Controls.Add(_btnLogs);
 
-        rightCol.Controls.AddRange([lblUser, _cmbUsuarios, lblPw, _txtPassword, _btnCambiarPw, grpModulo, _btnIngresar, _btnConexionBd, _btnSalir, _btnLogs]);
-        card.Controls.AddRange([leftCol, rightCol, cardHeader]);
+        formLayout.Controls.Add(lblUser, 0, 0);
+        formLayout.Controls.Add(_cmbUsuarios, 0, 1);
+        formLayout.Controls.Add(lblPw, 0, 2);
+        formLayout.Controls.Add(pwRow, 0, 3);
+        formLayout.Controls.Add(grpModulo, 0, 4);
+        formLayout.Controls.Add(btnRow1, 0, 5);
+        formLayout.Controls.Add(btnRow2, 0, 6);
+        rightCol.Controls.Add(formLayout);
 
-        var footerCard = new Panel
-        {
-            Location = new Point(36, 372),
-            Size = new Size(568, 32),
-            BackColor = AppTheme.SurfaceCard
-        };
+        cardBody.Controls.Add(leftCol, 0, 0);
+        cardBody.Controls.Add(rightCol, 1, 0);
+        card.Controls.AddRange([cardBody, cardHeader]);
+
+        var footerCard = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.SurfaceCard };
         _lblStatus.Dock = DockStyle.Fill;
         _lblStatus.Padding = new Padding(10, 0, 10, 0);
         _lblStatus.TextAlign = ContentAlignment.MiddleLeft;
+        _lblStatus.AutoEllipsis = true;
         _lblStatus.Font = new Font("Segoe UI", 8.75f, FontStyle.Bold);
         footerCard.Controls.Add(_lblStatus);
 
-        backdrop.Controls.AddRange([card, footerCard]);
+        outerLayout.Controls.Add(card, 0, 0);
+        outerLayout.Controls.Add(footerCard, 0, 1);
+        backdrop.Controls.Add(outerLayout);
         Controls.Add(backdrop);
 
         AcceptButton = _btnIngresar;
@@ -253,6 +282,17 @@ public sealed class LoginForm : Form
             _cmbUsuarios.DataSource = _usuarios;
             _cmbUsuarios.DisplayMember = nameof(Usuario.Nombre);
             _cmbUsuarios.ValueMember = nameof(Usuario.Id);
+
+            int barIdx = _usuarios.FindIndex(u => string.Equals(u.Nombre.Trim(), "BARRIAGADA", StringComparison.OrdinalIgnoreCase));
+            if (barIdx >= 0)
+            {
+                _cmbUsuarios.SelectedIndex = barIdx;
+            }
+            else if (_usuarios.Count > 0)
+            {
+                _cmbUsuarios.SelectedIndex = 0;
+            }
+
             string emp = string.IsNullOrWhiteSpace(_services.BasculaActual.NombreEmpresa) ? _services.DatabaseSettings.DatabasePath : _services.BasculaActual.NombreEmpresa;
             _lblStatus.Text = $"Conectado a {_services.DatabaseSettings.DataSource}: {emp} ({_usuarios.Count} usuarios activos)";
             _lblStatus.ForeColor = AppTheme.AccentEmerald;
@@ -269,11 +309,30 @@ public sealed class LoginForm : Form
         }
     }
 
+    private (short? Id, string? Nombre) ResolveUserInput()
+    {
+        string typed = _cmbUsuarios.Text.Trim();
+        if (_cmbUsuarios.SelectedItem is Usuario sel &&
+            (string.IsNullOrWhiteSpace(typed) || string.Equals(sel.Nombre.Trim(), typed, StringComparison.OrdinalIgnoreCase)))
+        {
+            return (sel.Id, sel.Nombre);
+        }
+
+        Usuario? exact = _usuarios.FirstOrDefault(u => string.Equals(u.Nombre.Trim(), typed, StringComparison.OrdinalIgnoreCase));
+        if (exact is not null)
+        {
+            return (exact.Id, exact.Nombre);
+        }
+
+        return (null, typed);
+    }
+
     private async Task AuthenticateAsync()
     {
-        if (_cmbUsuarios.SelectedItem is not Usuario selected)
+        (short? userId, string? userName) = ResolveUserInput();
+        if (!userId.HasValue && string.IsNullOrWhiteSpace(userName))
         {
-            MessageBox.Show(this, "Seleccione un usuario válido.", "Inicio de Sesión", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, "Seleccione o escriba un usuario válido.", "Inicio de Sesión", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -282,10 +341,10 @@ public sealed class LoginForm : Form
 
         try
         {
-            Usuario? authenticated = await _services.Security.AuthenticateAsync(selected.Id, _txtPassword.Text, sistemaLog);
+            Usuario? authenticated = await _services.Security.AuthenticateByLoginAsync(userId, userName, _txtPassword.Text, sistemaLog);
             if (authenticated is null)
             {
-                MessageBox.Show(this, "Contraseña incorrecta o usuario inactivo.", "Acceso Denegado", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, "Usuario inactivo o contraseña incorrecta.", "Acceso Denegado", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 _txtPassword.SelectAll();
                 _txtPassword.Focus();
                 return;
@@ -317,11 +376,12 @@ public sealed class LoginForm : Form
 
     private async Task OpenChangePasswordAsync()
     {
-        if (_cmbUsuarios.SelectedItem is not Usuario selected)
+        (short? userId, string? userName) = ResolveUserInput();
+        if (!userId.HasValue && string.IsNullOrWhiteSpace(userName))
         {
             return;
         }
-        Usuario? auth = await _services.Security.AuthenticateAsync(selected.Id, _txtPassword.Text, 2);
+        Usuario? auth = await _services.Security.AuthenticateByLoginAsync(userId, userName, _txtPassword.Text, 2);
         if (auth is null)
         {
             MessageBox.Show(this, "Ingrese primero su contraseña actual correcta.", "Validación", MessageBoxButtons.OK, MessageBoxIcon.Information);

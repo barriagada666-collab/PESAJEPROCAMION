@@ -37,7 +37,7 @@ jobs:
         dotnet test PesajeProCamion.sln
         --configuration ${{ matrix.configuration }}
         --no-build
-        --filter "FullyQualifiedName!~Ods9BinaryReader_ReadsAllTablesFromRealLegacyDatabase&FullyQualifiedName!~Ods9Migrator_MigratesAndCleansAllDataIntoRealFirebird25&FullyQualifiedName!~FirebirdMigratedDatabase_ConcurrentQueriesAndBatchInserts_StayFastAndLeakFree&FullyQualifiedName!~EndToEnd_CommercialAndMopWeighing_And_RegressionBugs_WorkCleanly"
+        --filter "Requires!=LocalFixture&FullyQualifiedName!~Ods9BinaryReader_ReadsAllTablesFromRealLegacyDatabase&FullyQualifiedName!~Ods9Migrator_MigratesAndCleansAllDataIntoRealFirebird25&FullyQualifiedName!~FirebirdMigratedDatabase_ConcurrentQueriesAndBatchInserts_StayFastAndLeakFree"
 
     - name: Publish portable self-contained win-x64 (Release)
       if: matrix.configuration == 'Release'

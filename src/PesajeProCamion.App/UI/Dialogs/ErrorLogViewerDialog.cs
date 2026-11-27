@@ -55,32 +55,46 @@ public sealed class ErrorLogViewerDialog : Form
         };
         header.Controls.Add(lblHead);
 
-        var filterBar = new Panel { Dock = DockStyle.Top, Height = 50, BackColor = AppTheme.SurfaceCard };
+        var filterBar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 48,
+            BackColor = AppTheme.SurfaceCard,
+            Padding = new Padding(10, 7, 10, 6),
+            WrapContents = false,
+            AutoScroll = true
+        };
         _cmbLevel.Items.AddRange(["Todos", "Error", "Warn", "Sql", "Serial", "Info"]);
         _cmbLevel.SelectedIndex = 0;
         _cmbLevel.SelectedIndexChanged += (_, _) => ReloadGrid();
+        _cmbLevel.Width = 114;
+        _cmbLevel.Margin = new Padding(4, 5, 10, 0);
 
-        filterBar.Controls.Add(new Label { Text = "Nivel:", Location = new Point(14, 16), AutoSize = true, Font = AppTheme.FontBodyBold });
-        _cmbLevel.SetBounds(62, 12, 114, 24);
-        filterBar.Controls.Add(new Label { Text = "Filtro:", Location = new Point(188, 16), AutoSize = true, Font = AppTheme.FontBodyBold });
-        _txtFilter.SetBounds(234, 12, 220, 24);
+        _txtFilter.Width = 220;
+        _txtFilter.Margin = new Padding(4, 5, 10, 0);
         _txtFilter.TextChanged += (_, _) => ReloadGrid();
 
-        var btnRefresh = new Button { Location = new Point(464, 9), Size = new Size(112, 32) };
+        var btnRefresh = new Button { Size = new Size(116, 32) };
         AppTheme.StyleSecondaryButton(btnRefresh, AppIcon.Refresh, "Actualizar", "Recargar registros", null, _tt);
         btnRefresh.Click += (_, _) => ReloadGrid();
 
-        var btnExport = new Button { Location = new Point(584, 9), Size = new Size(146, 32) };
+        var btnExport = new Button { Size = new Size(146, 32) };
         AppTheme.StylePrimaryButton(btnExport, AppIcon.Save, "Exportar .LOG", "Guardar registros en archivo", _tt);
         btnExport.Click += (_, _) => ExportLogs();
 
-        var btnClear = new Button { Location = new Point(738, 9), Size = new Size(118, 32) };
+        var btnClear = new Button { Size = new Size(118, 32) };
         AppTheme.StyleDangerButton(btnClear, AppIcon.Delete, "Limpiar", "Limpiar vista en memoria", _tt);
         btnClear.Click += (_, _) => { AppLogger.ClearMemory(); ReloadGrid(); };
 
-        filterBar.Controls.AddRange([_cmbLevel, _txtFilter, btnRefresh, btnExport, btnClear]);
+        filterBar.Controls.AddRange([
+            new Label { Text = "Nivel:", AutoSize = true, Margin = new Padding(2, 8, 2, 0), Font = AppTheme.FontBodyBold },
+            _cmbLevel,
+            new Label { Text = "Filtro:", AutoSize = true, Margin = new Padding(2, 8, 2, 0), Font = AppTheme.FontBodyBold },
+            _txtFilter,
+            btnRefresh, btnExport, btnClear
+        ]);
 
-        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 260, BackColor = AppTheme.BorderSubtle };
+        var split = new SplitContainer { Size = new Size(860, 420), Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 240, BackColor = AppTheme.BorderSubtle };
         AppTheme.StyleDataGrid(_grid);
         _grid.Dock = DockStyle.Fill;
         _grid.Columns.AddRange([
@@ -103,17 +117,22 @@ public sealed class ErrorLogViewerDialog : Form
         detailPanel.Controls.Add(_txtDetail);
         split.Panel2.Controls.Add(detailPanel);
 
-        var footer = new Panel { Dock = DockStyle.Bottom, Height = 44, BackColor = AppTheme.SurfaceCard };
+        var footer = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 46, BackColor = AppTheme.SurfaceCard, ColumnCount = 3, RowCount = 1, Padding = new Padding(10, 6, 10, 6) };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152f));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 126f));
+        footer.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
         var lblFile = new Label
         {
-            Location = new Point(14, 12),
-            Size = new Size(560, 22),
+            Dock = DockStyle.Fill,
             AutoEllipsis = true,
+            TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = AppTheme.TextMuted,
             Font = new Font("Segoe UI", 8.5f),
             Text = $"Archivo actual: {AppLogger.CurrentLogFilePath}"
         };
-        var btnFolder = new Button { Location = new Point(590, 6), Size = new Size(142, 32) };
+        var btnFolder = new Button { Dock = DockStyle.Fill };
         AppTheme.StyleSecondaryButton(btnFolder, AppIcon.Search, "Abrir Carpeta", "Abrir carpeta de logs en Explorador", null, _tt);
         btnFolder.Click += (_, _) =>
         {
@@ -121,10 +140,12 @@ public sealed class ErrorLogViewerDialog : Form
             Process.Start(new ProcessStartInfo("explorer.exe", AppLogger.LogDirectory) { UseShellExecute = true });
         };
 
-        var btnClose = new Button { Location = new Point(740, 6), Size = new Size(116, 32) };
+        var btnClose = new Button { Dock = DockStyle.Fill };
         AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar ventana", null, _tt);
         btnClose.Click += (_, _) => Close();
-        footer.Controls.AddRange([lblFile, btnFolder, btnClose]);
+        footer.Controls.Add(lblFile, 0, 0);
+        footer.Controls.Add(btnFolder, 1, 0);
+        footer.Controls.Add(btnClose, 2, 0);
 
         Controls.AddRange([split, footer, filterBar, header]);
     }

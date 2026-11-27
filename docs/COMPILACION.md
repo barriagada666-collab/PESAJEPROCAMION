@@ -19,7 +19,7 @@ dotnet test PesajeProCamion.sln -c Release --no-build
 ## Publicación Autocontenida (Zero-Dependencias)
 
 ### 1. Edición Portable Single-File (`win-x64`)
-No requiere .NET instalado ni permisos de administrador en el equipo cliente. Guarda `appsettings.json` y carpeta `Logs\` junto al ejecutable al activarse en carpeta portable:
+No requiere .NET instalado ni permisos de administrador en el equipo cliente. Guarda `appsettings.json` y carpeta `Logs\` junto al ejecutable al activar `portable.flag`:
 
 ```powershell
 dotnet publish src\PesajeProCamion.App\PesajeProCamion.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish\portable-win-x64
@@ -32,5 +32,5 @@ dotnet publish src\PesajeProCamion.App\PesajeProCamion.App.csproj -c Release -r 
 ```
 
 Artefactos resultantes en `installer\Output\`:
-- `PesajeProCamion_Setup_v2.0.0.exe` (Instalador moderno Inno Setup 7 autocontenido)
-- `PesajeProCamion_Portable_v2.0.0_win-x64.zip` (Paquete portable ejecutable sin instalación)
+- `PesajeProCamion_Setup_v2.1.0.exe` (Instalador moderno Inno Setup 7 autocontenido)
+- `PesajeProCamion_Portable_v2.1.0_win-x64.zip` (Paquete portable ejecutable sin instalación)

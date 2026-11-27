@@ -45,7 +45,15 @@ public enum AppIcon
     ManualWeight,
     Tare,
     Database,
-    Logs
+    Logs,
+    Pdf,
+    ViewTicket,
+    EditTicket,
+    Duplicate,
+    Chart,
+    Eye,
+    Copy,
+    Toggle
 }
 
 /// <summary>
@@ -330,6 +338,44 @@ public static class IconCatalog
                 g.DrawRectangle(pen, pad + 1, pad + 2, w - 2, w - 3);
                 g.DrawLine(pen, pad + 4, s * 0.50f, s - pad - 4, s * 0.50f);
                 g.DrawLine(pen, s * 0.50f, pad + 4, s * 0.50f, s * 0.72f);
+                break;
+
+            case AppIcon.Pdf:
+            case AppIcon.ViewTicket:
+                g.DrawRectangle(pen, pad + 2, pad, w - 4, w);
+                g.DrawLine(pen, pad + 5, pad + w * 0.30f, s - pad - 5, pad + w * 0.30f);
+                g.DrawLine(pen, pad + 5, pad + w * 0.52f, s - pad - 5, pad + w * 0.52f);
+                g.DrawLine(pen, pad + 5, pad + w * 0.74f, s - pad - 7, pad + w * 0.74f);
+                break;
+
+            case AppIcon.EditTicket:
+                g.DrawRectangle(pen, pad + 1, pad + 3, w - 4, w - 4);
+                g.DrawLine(pen, s * 0.44f, s * 0.56f, s - pad, pad + 1);
+                break;
+
+            case AppIcon.Duplicate:
+            case AppIcon.Copy:
+                g.DrawRectangle(pen, pad + 4, pad + 4, w - 5, w - 5);
+                g.DrawLine(pen, pad, pad, s - pad - 5, pad);
+                g.DrawLine(pen, pad, pad, pad, s - pad - 5);
+                break;
+
+            case AppIcon.Chart:
+                g.DrawLine(pen, pad + 1, s - pad - 1, s - pad - 1, s - pad - 1);
+                g.FillRectangle(brush, pad + 2, s * 0.52f, w * 0.22f, s - pad - 2 - s * 0.52f);
+                g.FillRectangle(brush, pad + w * 0.38f, pad + 2, w * 0.22f, s - pad - 2 - (pad + 2));
+                g.FillRectangle(brush, pad + w * 0.74f, s * 0.34f, w * 0.22f, s - pad - 2 - s * 0.34f);
+                break;
+
+            case AppIcon.Eye:
+                g.DrawArc(pen, pad, pad + w * 0.15f, w, w * 0.70f, 180, 180);
+                g.DrawArc(pen, pad, pad + w * 0.15f, w, w * 0.70f, 0, 180);
+                g.FillEllipse(brush, s * 0.38f, s * 0.38f, s * 0.24f, s * 0.24f);
+                break;
+
+            case AppIcon.Toggle:
+                g.DrawRectangle(pen, pad + 1, s * 0.28f, w - 2, w * 0.44f);
+                g.FillEllipse(brush, s - pad - w * 0.40f, s * 0.33f, w * 0.34f, w * 0.34f);
                 break;
         }
 

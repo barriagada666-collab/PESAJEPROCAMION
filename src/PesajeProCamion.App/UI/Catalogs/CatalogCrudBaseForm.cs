@@ -26,16 +26,11 @@ public abstract class CatalogCrudBaseForm<TItem> : Form
         _services = services;
 
         Text = title;
-        ClientSize = new Size(width, height);
-        StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        BackColor = AppTheme.BackgroundLight;
+        AppTheme.ConfigureResponsiveDialog(this, width + 40, height + 20, Math.Max(540, width - 80), Math.Max(260, height - 40), resizable: true);
         KeyPreview = true;
 
         BuildShell();
-        Load += async (_, _) => await ReloadAsync();
+        Load += async (_, _) => await AppTheme.SafeLoadAsync(this, Text, () => ReloadAsync());
     }
 
     protected AppServices Services => _services;

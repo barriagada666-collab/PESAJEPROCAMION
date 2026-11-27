@@ -36,11 +36,32 @@ public sealed class SecurityRepository
     }
 
     public async Task<Usuario?> AuthenticateAsync(short usuarioId, string password, int sistemaId, CancellationToken ct = default)
+        => await AuthenticateInternalAsync(usuarioId, null, password, sistemaId, ct).ConfigureAwait(false);
+
+    public async Task<Usuario?> AuthenticateByLoginAsync(short? usuarioId, string? username, string password, int sistemaId, CancellationToken ct = default)
+        => await AuthenticateInternalAsync(usuarioId, username, password, sistemaId, ct).ConfigureAwait(false);
+
+    private async Task<Usuario?> AuthenticateInternalAsync(short? usuarioId, string? username, string password, int sistemaId, CancellationToken ct)
     {
         DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         await using FbConnection conn = await _db.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = new FbCommand("SELECT * FROM DBUSUARIOS WHERE USUARIO = @ID", conn);
-        AddParam(cmd, "@ID", usuarioId);
+        await using var cmd = new FbCommand();
+        cmd.Connection = conn;
+        if (usuarioId.HasValue && usuarioId.Value > 0)
+        {
+            cmd.CommandText = "SELECT * FROM DBUSUARIOS WHERE USUARIO = @ID";
+            AddParam(cmd, "@ID", usuarioId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(username))
+        {
+            cmd.CommandText = "SELECT * FROM DBUSUARIOS WHERE UPPER(TRIM(NOMBRE)) = @NOM";
+            AddParam(cmd, "@NOM", username.Trim().ToUpperInvariant());
+        }
+        else
+        {
+            return null;
+        }
+
         await using FbDataReader r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await r.ReadAsync(ct).ConfigureAwait(false))
         {
@@ -50,7 +71,7 @@ public sealed class SecurityRepository
         Usuario user = MapUsuario(r);
         if (!user.Activo || !PasswordHasher.VerifyPassword(password, user.PasswordHash, out bool needsRehash))
         {
-            AppLogger.Warn("Security", $"Intento de autenticación fallido para usuario #{usuarioId} ({user.Nombre}).");
+            AppLogger.Warn("Security", $"Intento de autenticación fallido para usuario '{user.Nombre}' (ID={user.Id}).");
             return null;
         }
 
@@ -106,6 +127,18 @@ public sealed class SecurityRepository
         return await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
             bool esNuevo = u.Id <= 0;
+            string normName = u.Nombre.Trim().ToUpperInvariant();
+            if (normName.Length > 40) normName = normName[..40];
+
+            await using var dupCmd = new FbCommand("SELECT COUNT(*) FROM DBUSUARIOS WHERE UPPER(TRIM(NOMBRE)) = @N AND USUARIO <> @U", conn, tx);
+            AddParam(dupCmd, "@N", normName);
+            AddParam(dupCmd, "@U", u.Id);
+            int dupCount = Convert.ToInt32(await dupCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+            if (dupCount > 0)
+            {
+                throw new InvalidOperationException($"Ya existe otro usuario registrado con el nombre '{normName}'.");
+            }
+
             if (esNuevo)
             {
                 await using var nextCmd = new FbCommand("SELECT COALESCE(MAX(USUARIO), 0) + 1 FROM DBUSUARIOS", conn, tx);
@@ -183,16 +216,68 @@ public sealed class SecurityRepository
         }, ct).ConfigureAwait(false);
     }
 
+    public async Task SetUsuarioActivoAsync(short usuarioId, bool activo, short actorId, CancellationToken ct = default)
+    {
+        DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        await _db.ExecuteInTransactionAsync(async (conn, tx) =>
+        {
+            if (!activo)
+            {
+                await EnsureAtLeastOneOtherActiveAdminAsync(conn, tx, usuarioId, ct).ConfigureAwait(false);
+            }
+            await using var cmd = new FbCommand("UPDATE DBUSUARIOS SET ACTIVO = @AC, USUAMOD = @UM WHERE USUARIO = @U", conn, tx);
+            AddParam(cmd, "@AC", activo ? "1" : "0");
+            AddParam(cmd, "@UM", actorId);
+            AddParam(cmd, "@U", usuarioId);
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            await InsertAuditInternalAsync(conn, tx, caps, actorId, "SEGURIDAD", "DBUSUARIOS", usuarioId.ToString(CultureInfo.InvariantCulture), activo ? "ACTIVAR" : "DESACTIVAR", $"Activo={activo}", ct).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
+    }
+
+    public async Task ResetPasswordAsync(short usuarioId, string newPlainPassword, short adminActorId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(newPlainPassword);
+        await ChangePasswordAsync(usuarioId, newPlainPassword, adminActorId, ct).ConfigureAwait(false);
+    }
+
     public async Task DeleteUsuarioAsync(short usuarioId, short actorId, CancellationToken ct = default)
     {
         DatabaseCapabilities caps = await _db.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         await _db.ExecuteInTransactionAsync(async (conn, tx) =>
         {
+            await EnsureAtLeastOneOtherActiveAdminAsync(conn, tx, usuarioId, ct).ConfigureAwait(false);
             await using var cmd = new FbCommand("DELETE FROM DBUSUARIOS WHERE USUARIO = @U", conn, tx);
             AddParam(cmd, "@U", usuarioId);
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             await InsertAuditInternalAsync(conn, tx, caps, actorId, "SEGURIDAD", "DBUSUARIOS", usuarioId.ToString(CultureInfo.InvariantCulture), "ELIMINAR", "Usuario eliminado", ct).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
+    }
+
+    private static async Task EnsureAtLeastOneOtherActiveAdminAsync(FbConnection conn, FbTransaction tx, short excludedUserId, CancellationToken ct)
+    {
+        await using var chkTarget = new FbCommand("SELECT PERFIL, ACTIVO, SUPSISTEMA FROM DBUSUARIOS WHERE USUARIO = @U", conn, tx);
+        AddParam(chkTarget, "@U", excludedUserId);
+        await using FbDataReader r = await chkTarget.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await r.ReadAsync(ct).ConfigureAwait(false))
+        {
+            return;
+        }
+        bool isTargetAdmin = GetShort(r, "PERFIL") == (short)PerfilOperacion.Administracion || GetFlag(r, "SUPSISTEMA");
+        bool isTargetActive = GetFlag(r, "ACTIVO", true);
+        await r.CloseAsync().ConfigureAwait(false);
+
+        if (!isTargetAdmin || !isTargetActive)
+        {
+            return;
+        }
+
+        await using var cntCmd = new FbCommand("SELECT COUNT(*) FROM DBUSUARIOS WHERE ACTIVO = '1' AND (PERFIL = 2 OR SUPSISTEMA = '1') AND USUARIO <> @U", conn, tx);
+        AddParam(cntCmd, "@U", excludedUserId);
+        int others = Convert.ToInt32(await cntCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        if (others == 0)
+        {
+            throw new InvalidOperationException("No se puede eliminar ni desactivar al último Administrador activo del sistema.");
+        }
     }
 
     public async Task RegistrarLogIngresoAsync(int usuarioId, int sistemaId, int accionId, int turno = 0, CancellationToken ct = default)

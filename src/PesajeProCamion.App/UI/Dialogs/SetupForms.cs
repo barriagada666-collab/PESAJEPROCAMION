@@ -33,15 +33,9 @@ public sealed class VisorSetupForm : Form
         ArgumentNullException.ThrowIfNull(services);
         _services = services;
         Text = "Configuración de Visor de Peso RS-232";
-        ClientSize = new Size(680, 500);
-        StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        BackColor = AppTheme.BackgroundLight;
-        AppTheme.ApplyFormIcon(this);
+        AppTheme.ConfigureResponsiveDialog(this, 710, 520, 660, 480, resizable: true);
         BuildUi();
-        Load += async (_, _) => await LoadCurrentAsync();
+        Load += async (_, _) => await AppTheme.SafeLoadAsync(this, "Visor RS-232", LoadCurrentAsync);
         FormClosing += (_, _) => _services.Scale.ReadingReceived -= OnReading;
     }
 
@@ -59,30 +53,49 @@ public sealed class VisorSetupForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
             Text = "Visor de Pesaje RS-232 — Lectura Directa, Trama ASCII y Simulación"
         });
-        Controls.Add(header);
 
-        _previewLcd.Location = new Point(18, 56);
-        _previewLcd.Size = new Size(340, 82);
-        Controls.Add(_previewLcd);
+        var footerBar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 52,
+            FlowDirection = FlowDirection.RightToLeft,
+            Padding = new Padding(12, 8, 16, 8),
+            BackColor = AppTheme.SurfaceCard
+        };
+        var btnClose = new Button { Size = new Size(124, 36) };
+        AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar ventana");
+        btnClose.Click += (_, _) => Close();
+        var btnSave = new Button { Size = new Size(184, 36) };
+        AppTheme.StylePrimaryButton(btnSave, AppIcon.Save, "Guardar y Aplicar", "Guardar y aplicar configuración de visor");
+        btnSave.Click += async (_, _) => await SaveAsync();
+        footerBar.Controls.AddRange([btnClose, btnSave]);
 
-        _txtParsed.Location = new Point(372, 56);
-        _txtParsed.Width = 288;
+        var body = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+
+        _previewLcd.Location = new Point(18, 12);
+        _previewLcd.Size = new Size(344, 82);
+        body.Controls.Add(_previewLcd);
+
+        _txtParsed.Location = new Point(376, 12);
+        _txtParsed.Width = 312;
+        _txtParsed.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         _txtParsed.BackColor = AppTheme.LcdBackground;
         _txtParsed.ForeColor = AppTheme.LcdDigitOn;
         _txtParsed.Font = new Font("Consolas", 11f, FontStyle.Bold);
         _txtParsed.ReadOnly = true;
 
-        _txtRaw.Location = new Point(372, 88);
-        _txtRaw.Size = new Size(288, 178);
+        _txtRaw.Location = new Point(376, 44);
+        _txtRaw.Size = new Size(312, 182);
+        _txtRaw.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         _txtRaw.Multiline = true;
         _txtRaw.ScrollBars = ScrollBars.Vertical;
         _txtRaw.BackColor = AppTheme.LcdBackground;
         _txtRaw.ForeColor = Color.LightGreen;
         _txtRaw.Font = new Font("Consolas", 8.75f);
         _txtRaw.ReadOnly = true;
-        Controls.AddRange([_txtParsed, _txtRaw]);
+        body.Controls.AddRange([_txtParsed, _txtRaw]);
 
-        var grpSerial = new GroupBox { Text = "Configuración Puerto Serial", Location = new Point(18, 150), Size = new Size(340, 232), Font = AppTheme.FontBodyBold, ForeColor = AppTheme.NavyDark };
+        var grpSerial = new GroupBox { Text = "Configuración Puerto Serial", Location = new Point(18, 106), Size = new Size(344, 294), Font = AppTheme.FontBodyBold, ForeColor = AppTheme.NavyDark };
         _cmbCom.DropDownStyle = ComboBoxStyle.DropDownList;
         var ports = new List<string>(Enumerable.Range(1, 16).Select(i => $"COM{i}"));
         foreach (string detected in ScaleReaderService.GetAvailablePorts())
@@ -106,23 +119,24 @@ public sealed class VisorSetupForm : Form
         AddPair(grpSerial, "Paridad", _cmbParity, 124);
         _cmbCom.SelectedIndex = 0; _cmbBaud.SelectedIndex = 0; _cmbDataBits.SelectedIndex = 1; _cmbParity.SelectedIndex = 0;
 
-        var btnOpen = new Button { Location = new Point(12, 160), Size = new Size(100, 30) };
+        var btnFlow = new FlowLayoutPanel { Location = new Point(10, 158), Size = new Size(324, 124) };
+        var btnOpen = new Button { Size = new Size(102, 34) };
         AppTheme.StylePrimaryButton(btnOpen, AppIcon.SerialPort, "Abrir", "Abrir puerto serial físico del visor");
         btnOpen.Click += async (_, _) => await TestOpenSerialAsync();
 
-        var btnCloseCom = new Button { Location = new Point(118, 160), Size = new Size(100, 30) };
-        AppTheme.StyleSecondaryButton(btnCloseCom, AppIcon.Cancel, "Cerrar", "Cerrar puerto serial activo", AppTheme.AccentDanger);
+        var btnCloseCom = new Button { Size = new Size(102, 34) };
+        AppTheme.StyleSecondaryButton(btnCloseCom, AppIcon.Cancel, "Cerrar COM", "Cerrar puerto serial activo", AppTheme.AccentDanger);
         btnCloseCom.Click += (_, _) =>
         {
             _services.Scale.Close();
             _txtRaw.AppendText("[COM] Puerto serial cerrado." + Environment.NewLine);
         };
 
-        var btnSim = new Button { Location = new Point(224, 160), Size = new Size(104, 30) };
+        var btnSim = new Button { Size = new Size(106, 34) };
         AppTheme.StyleSecondaryButton(btnSim, AppIcon.Refresh, "Simular", "Emitir lectura simulada al visor", AppTheme.AccentEmerald);
         btnSim.Click += (_, _) => _services.Scale.EmitSimulatedWeight(18450, true);
 
-        var btnTestFrame = new Button { Location = new Point(12, 196), Size = new Size(156, 28) };
+        var btnTestFrame = new Button { Size = new Size(166, 34) };
         AppTheme.StyleSecondaryButton(btnTestFrame, AppIcon.Scale, "Probar Trama STX", "Inyectar trama ASCII de prueba según configuración STX/Pos/Len", AppTheme.NavyPrimary);
         btnTestFrame.Click += (_, _) =>
         {
@@ -131,33 +145,26 @@ public sealed class VisorSetupForm : Form
             _services.Scale.FeedRawAsciiTestFrame(sample);
         };
 
-        var btnDefaults = new Button { Location = new Point(176, 196), Size = new Size(152, 28) };
-        AppTheme.StyleSecondaryButton(btnDefaults, AppIcon.Settings, "Defecto", "Restaurar valores por defecto");
+        var btnDefaults = new Button { Size = new Size(134, 34) };
+        AppTheme.StyleSecondaryButton(btnDefaults, AppIcon.Settings, "Por Defecto", "Restaurar valores por defecto");
         btnDefaults.Click += (_, _) =>
         {
             _cmbCom.SelectedIndex = 0; _cmbBaud.SelectedIndex = 0; _cmbDataBits.SelectedIndex = 1; _cmbParity.SelectedIndex = 0;
             _numStx.Value = 2; _numLen.Value = 5; _numPos.Value = 3; _numLimit.Value = 1; _numDelta.Value = 10;
         };
-        grpSerial.Controls.AddRange([btnOpen, btnCloseCom, btnSim, btnTestFrame, btnDefaults]);
-        Controls.Add(grpSerial);
+        btnFlow.Controls.AddRange([btnOpen, btnCloseCom, btnSim, btnTestFrame, btnDefaults]);
+        grpSerial.Controls.Add(btnFlow);
+        body.Controls.Add(grpSerial);
 
-        var grpDatos = new GroupBox { Text = "Trama de Datos (0 = línea CR/LF sin STX)", Location = new Point(372, 274), Size = new Size(288, 160), Font = AppTheme.FontBodyBold, ForeColor = AppTheme.NavyDark };
-        AddPairNum(grpDatos, "STX (ASCII)", _numStx, 0, 255, 26);
-        AddPairNum(grpDatos, "Posición Dato", _numPos, 1, 50, 56);
-        AddPairNum(grpDatos, "Largo Dato", _numLen, 1, 15, 86);
-        AddPairNum(grpDatos, "Muestras Estab.", _numLimit, 1, 50, 116);
+        var grpDatos = new GroupBox { Text = "Trama de Datos (0 = línea CR/LF sin STX)", Location = new Point(376, 234), Size = new Size(312, 166), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, Font = AppTheme.FontBodyBold, ForeColor = AppTheme.NavyDark };
+        AddPairNum(grpDatos, "STX (ASCII)", _numStx, 0, 255, 28);
+        AddPairNum(grpDatos, "Posición Dato", _numPos, 1, 50, 58);
+        AddPairNum(grpDatos, "Largo Dato", _numLen, 1, 15, 88);
+        AddPairNum(grpDatos, "Muestras Estab.", _numLimit, 1, 50, 118);
         _numStx.Value = 2; _numPos.Value = 3; _numLen.Value = 5; _numLimit.Value = 1;
-        Controls.Add(grpDatos);
+        body.Controls.Add(grpDatos);
 
-        var btnSave = new Button { Location = new Point(362, 448), Size = new Size(168, 36) };
-        AppTheme.StylePrimaryButton(btnSave, AppIcon.Save, "Guardar y Aplicar", "Guardar y aplicar configuración de visor");
-        btnSave.Click += async (_, _) => await SaveAsync();
-
-        var btnClose = new Button { Location = new Point(538, 448), Size = new Size(122, 36) };
-        AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar ventana");
-        btnClose.Click += (_, _) => Close();
-
-        Controls.AddRange([btnSave, btnClose]);
+        Controls.AddRange([body, footerBar, header]);
         _previewLcd.UpdateReading(_services.Scale.CurrentWeightKg, true, _services.Scale.CurrentWeightKg == 0, false, false, false, _services.Scale.IsSimulationActive);
         _txtParsed.Text = $"Peso actual: {_services.Scale.CurrentWeightKg:N0} kg";
         _services.Scale.ReadingReceived += OnReading;
@@ -282,59 +289,66 @@ public sealed class DinamicoSetupForm : Form
         ArgumentNullException.ThrowIfNull(services);
         _services = services;
         Text = "Configuración Pesaje Dinámico MOP";
-        ClientSize = new Size(640, 440);
-        StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        BackColor = AppTheme.BackgroundLight;
+        AppTheme.ConfigureResponsiveDialog(this, 680, 468, 640, 440, resizable: true);
         BuildUi();
-        Load += async (_, _) => await LoadAsync();
+        Load += async (_, _) => await AppTheme.SafeLoadAsync(this, "Pesaje Dinámico MOP", LoadAsync);
     }
 
     private void BuildUi()
     {
-        var g1 = new GroupBox { Text = "Cortes (%)", Location = new Point(16, 16), Size = new Size(190, 115) };
-        AddN(g1, "Inicial (%)", _numCutLeft, 0, 45, 28);
-        AddN(g1, "Final (%)", _numCutRight, 0, 45, 64);
-
-        var g2 = new GroupBox { Text = "Filtros", Location = new Point(220, 16), Size = new Size(200, 115) };
-        AddN(g2, "Nro Filtros", _numFiltros, 1, 500, 24);
-        AddN(g2, "Hi Factor", _numUp, 0, 10, 52, decimals: 2);
-        AddN(g2, "Low Factor", _numDown, 0, 10, 80, decimals: 2);
-
-        var g3 = new GroupBox { Text = "Límites Disparo (kg)", Location = new Point(434, 16), Size = new Size(190, 115) };
-        AddN(g3, "Inicial (Under)", _numUnder, 10, 5000, 28);
-        AddN(g3, "Final (Over)", _numOver, 10, 5000, 64);
-
-        var g4 = new GroupBox { Text = "Calibración y Offsets por Eje (Ejes 1 a 7)", Location = new Point(16, 144), Size = new Size(608, 232) };
-        for (int i = 0; i < 7; i++)
+        var footer = new FlowLayoutPanel
         {
-            int y = 24 + i * 28;
-            g4.Controls.Add(new Label { Text = $"Eje {i + 1}", Location = new Point(18, y + 3), AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
-            g4.Controls.Add(new Label { Text = "Calib:", Location = new Point(95, y + 3), AutoSize = true });
-            _calibs[i] = new NumericUpDown { Location = new Point(145, y), Width = 120, Minimum = -10000, Maximum = 10000 };
-            g4.Controls.Add(new Label { Text = "Offset:", Location = new Point(310, y + 3), AutoSize = true });
-            _offsets[i] = new NumericUpDown { Location = new Point(370, y), Width = 120, Minimum = -10000, Maximum = 10000 };
-            g4.Controls.AddRange([_calibs[i], _offsets[i]]);
-        }
+            Dock = DockStyle.Bottom,
+            Height = 52,
+            FlowDirection = FlowDirection.RightToLeft,
+            BackColor = AppTheme.SurfaceCard,
+            Padding = new Padding(12, 8, 16, 8)
+        };
+        var btnClose = new Button { Size = new Size(122, 36) };
+        AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar");
+        btnClose.Click += (_, _) => Close();
 
-        var btnReset = new Button { Location = new Point(16, 390), Size = new Size(140, 34) };
+        var btnSave = new Button { Size = new Size(134, 36) };
+        AppTheme.StylePrimaryButton(btnSave, AppIcon.Save, "Guardar", "Guardar parámetros dinámicos");
+        btnSave.Click += async (_, _) => await SaveAsync();
+
+        var btnReset = new Button { Size = new Size(164, 36) };
         AppTheme.StyleSecondaryButton(btnReset, AppIcon.Refresh, "Limpiar Offsets", "Reiniciar calibraciones y offsets a 0");
         btnReset.Click += (_, _) =>
         {
             for (int i = 0; i < 7; i++) { _calibs[i].Value = 0; _offsets[i].Value = 0; }
         };
+        footer.Controls.AddRange([btnClose, btnSave, btnReset]);
 
-        var btnSave = new Button { Location = new Point(368, 390), Size = new Size(125, 34) };
-        AppTheme.StylePrimaryButton(btnSave, AppIcon.Save, "Guardar", "Guardar parámetros dinámicos");
-        btnSave.Click += async (_, _) => await SaveAsync();
+        var body = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(14) };
 
-        var btnClose = new Button { Location = new Point(504, 390), Size = new Size(120, 34) };
-        AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar");
-        btnClose.Click += (_, _) => Close();
+        var g1 = new GroupBox { Text = "Cortes (%)", Location = new Point(16, 12), Size = new Size(202, 118), Font = AppTheme.FontBodyBold };
+        AddN(g1, "Inicial (%)", _numCutLeft, 0, 45, 28);
+        AddN(g1, "Final (%)", _numCutRight, 0, 45, 64);
 
-        Controls.AddRange([g1, g2, g3, g4, btnReset, btnSave, btnClose]);
+        var g2 = new GroupBox { Text = "Filtros", Location = new Point(232, 12), Size = new Size(212, 118), Font = AppTheme.FontBodyBold };
+        AddN(g2, "Nro Filtros", _numFiltros, 1, 500, 24);
+        AddN(g2, "Hi Factor", _numUp, 0, 10, 52, decimals: 2);
+        AddN(g2, "Low Factor", _numDown, 0, 10, 80, decimals: 2);
+
+        var g3 = new GroupBox { Text = "Límites Disparo (kg)", Location = new Point(458, 12), Size = new Size(202, 118), Font = AppTheme.FontBodyBold };
+        AddN(g3, "Inicial (Under)", _numUnder, 10, 5000, 28);
+        AddN(g3, "Final (Over)", _numOver, 10, 5000, 64);
+
+        var g4 = new GroupBox { Text = "Calibración y Offsets por Eje (Ejes 1 a 7)", Location = new Point(16, 142), Size = new Size(644, 242), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, Font = AppTheme.FontBodyBold };
+        for (int i = 0; i < 7; i++)
+        {
+            int y = 26 + i * 29;
+            g4.Controls.Add(new Label { Text = $"Eje {i + 1}", Location = new Point(18, y + 3), AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
+            g4.Controls.Add(new Label { Text = "Calib:", Location = new Point(98, y + 3), AutoSize = true, Font = AppTheme.FontBody });
+            _calibs[i] = new NumericUpDown { Location = new Point(150, y), Width = 130, Minimum = -10000, Maximum = 10000, Font = AppTheme.FontBody };
+            g4.Controls.Add(new Label { Text = "Offset:", Location = new Point(320, y + 3), AutoSize = true, Font = AppTheme.FontBody });
+            _offsets[i] = new NumericUpDown { Location = new Point(382, y), Width = 130, Minimum = -10000, Maximum = 10000, Font = AppTheme.FontBody };
+            g4.Controls.AddRange([_calibs[i], _offsets[i]]);
+        }
+
+        body.Controls.AddRange([g1, g2, g3, g4]);
+        Controls.AddRange([body, footer]);
     }
 
     private static void AddN(GroupBox grp, string lbl, NumericUpDown num, int min, int max, int y, int decimals = 0)
@@ -412,14 +426,9 @@ public sealed class InstalacionForm : Form
         ArgumentNullException.ThrowIfNull(services);
         _services = services;
         Text = "Parámetros de Instalación";
-        ClientSize = new Size(640, 450);
-        StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        BackColor = AppTheme.BackgroundLight;
+        AppTheme.ConfigureResponsiveDialog(this, 680, 480, 640, 450, resizable: true);
         BuildUi();
-        Load += async (_, _) => await LoadAsync();
+        Load += async (_, _) => await AppTheme.SafeLoadAsync(this, "Pesaje Dinámico MOP", LoadAsync);
     }
 
     private void BuildUi()
@@ -458,7 +467,7 @@ public sealed class InstalacionForm : Form
         _cmbTipoCarga.Width = 300;
         _cmbTipoCarga.DropDownStyle = ComboBoxStyle.DropDownList;
 
-        var btnTestTicket = new Button { Location = new Point(22, 400), Size = new Size(165, 34) };
+        var btnTestTicket = new Button { Location = new Point(22, 400), Size = new Size(192, 36) };
         AppTheme.StyleSecondaryButton(btnTestTicket, AppIcon.Print, "Imprimir Test Ticket", "Generar ticket de prueba");
         btnTestTicket.Click += (_, _) =>
         {
@@ -481,11 +490,11 @@ public sealed class InstalacionForm : Form
             prev.ShowDialog(this);
         };
 
-        var btnSave = new Button { Location = new Point(365, 400), Size = new Size(125, 34) };
+        var btnSave = new Button { Location = new Point(365, 400), Size = new Size(128, 36) };
         AppTheme.StylePrimaryButton(btnSave, AppIcon.Save, "Guardar", "Guardar parámetros de instalación");
         btnSave.Click += async (_, _) => await SaveAsync();
 
-        var btnClose = new Button { Location = new Point(500, 400), Size = new Size(120, 34) };
+        var btnClose = new Button { Location = new Point(502, 400), Size = new Size(122, 36) };
         AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar");
         btnClose.Click += (_, _) => Close();
 
@@ -579,202 +588,3 @@ public sealed class InstalacionForm : Form
     }
 }
 
-/// <summary>Administración completa de usuarios y matriz RBAC de privilegios.</summary>
-public sealed class UsuariosForm : Form
-{
-    private readonly AppServices _services;
-    private readonly ListBox _lstUsers = new();
-    private readonly TextBox _txtNombre = new();
-    private readonly TextBox _txtCargo = new();
-    private readonly TextBox _txtPassword = new();
-    private readonly RadioButton _rbOp = new();
-    private readonly RadioButton _rbCon = new();
-    private readonly RadioButton _rbAdm = new();
-    private readonly CheckBox _chkActivo = new();
-    private readonly CheckBox _chkCambioPw = new();
-    private readonly CheckBox _chkMod = new();
-    private readonly CheckBox _chkAdd = new();
-    private readonly CheckBox _chkDel = new();
-    private readonly CheckBox _chkPrn = new();
-    private readonly CheckBox _chkPesaje = new();
-    private readonly CheckBox _chkGestion = new();
-    private readonly CheckBox _chkSup = new();
-    private readonly CheckBox _chkJefe = new();
-    private List<Usuario> _usuarios = [];
-    private Usuario? _editing;
-
-    public UsuariosForm(AppServices services)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-        _services = services;
-        Text = "Administración de Usuarios y Permisos";
-        ClientSize = new Size(760, 440);
-        StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        BackColor = AppTheme.BackgroundLight;
-        BuildUi();
-        Load += async (_, _) => await LoadAsync();
-    }
-
-    private void BuildUi()
-    {
-        _lstUsers.Location = new Point(16, 16);
-        _lstUsers.Size = new Size(210, 360);
-        _lstUsers.Font = new Font("Segoe UI", 9.5f);
-        _lstUsers.SelectedIndexChanged += (_, _) =>
-        {
-            if (_lstUsers.SelectedItem is Usuario u) BindUser(u);
-        };
-
-        int rx = 246;
-        Controls.Add(new Label { Text = "Nombre", Location = new Point(rx, 20), AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
-        _txtNombre.SetBounds(rx + 95, 18, 390, 24);
-        _txtNombre.CharacterCasing = CharacterCasing.Upper;
-
-        Controls.Add(new Label { Text = "Cargo", Location = new Point(rx, 54), AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
-        _txtCargo.SetBounds(rx + 95, 52, 390, 24);
-        _txtCargo.CharacterCasing = CharacterCasing.Upper;
-
-        Controls.Add(new Label { Text = "Nueva Clave", Location = new Point(rx, 88), AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
-        _txtPassword.SetBounds(rx + 95, 86, 180, 24);
-        _txtPassword.UseSystemPasswordChar = true;
-        _txtPassword.CharacterCasing = CharacterCasing.Upper;
-        Controls.Add(new Label { Text = "(dejar vacío para conservar actual)", Location = new Point(rx + 282, 89), AutoSize = true, ForeColor = AppTheme.TextMuted });
-
-        var grpPerfil = new GroupBox { Text = "Perfil de Operación", Location = new Point(rx, 126), Size = new Size(235, 130) };
-        _rbOp.SetBounds(14, 24, 200, 22); _rbOp.Text = "Operación de Pesaje";
-        _rbCon.SetBounds(14, 52, 200, 22); _rbCon.Text = "Consulta de Datos";
-        _rbAdm.SetBounds(14, 80, 200, 22); _rbAdm.Text = "Administración";
-        grpPerfil.Controls.AddRange([_rbOp, _rbCon, _rbAdm]);
-
-        var grpPriv = new GroupBox { Text = "Privilegios", Location = new Point(rx + 245, 126), Size = new Size(240, 130) };
-        _chkMod.SetBounds(14, 22, 110, 22); _chkMod.Text = "Modificar";
-        _chkAdd.SetBounds(128, 22, 100, 22); _chkAdd.Text = "Agregar";
-        _chkDel.SetBounds(14, 50, 110, 22); _chkDel.Text = "Eliminar";
-        _chkPrn.SetBounds(128, 50, 100, 22); _chkPrn.Text = "Imprimir";
-        _chkSup.SetBounds(14, 78, 110, 22); _chkSup.Text = "Sup. Sistema";
-        _chkJefe.SetBounds(128, 78, 105, 22); _chkJefe.Text = "Jefe Turno";
-        grpPriv.Controls.AddRange([_chkMod, _chkAdd, _chkDel, _chkPrn, _chkSup, _chkJefe]);
-
-        var grpMod = new GroupBox { Text = "Acceso y Estado", Location = new Point(rx, 266), Size = new Size(485, 110) };
-        _chkPesaje.SetBounds(14, 24, 180, 22); _chkPesaje.Text = "Acceso Módulo Pesaje";
-        _chkGestion.SetBounds(220, 24, 200, 22); _chkGestion.Text = "Acceso Módulo Gestión";
-        _chkActivo.SetBounds(14, 58, 180, 22); _chkActivo.Text = "Usuario Activo";
-        _chkCambioPw.SetBounds(220, 58, 220, 22); _chkCambioPw.Text = "Puede Cambiar Contraseña";
-        grpMod.Controls.AddRange([_chkPesaje, _chkGestion, _chkActivo, _chkCambioPw]);
-
-        var btnNew = new Button { Location = new Point(16, 390), Size = new Size(105, 34) };
-        AppTheme.StyleSecondaryButton(btnNew, AppIcon.Add, "Nuevo", "Crear nuevo usuario", AppTheme.AccentEmerald);
-        btnNew.Click += (_, _) =>
-        {
-            _editing = new Usuario { Id = 0, Activo = true, PuedeImprimir = true, PuedeCambiarPassword = true, IngresoPesaje = true };
-            BindUser(_editing);
-            _txtNombre.Focus();
-        };
-
-        var btnDel = new Button { Location = new Point(130, 390), Size = new Size(105, 34) };
-        AppTheme.StyleDangerButton(btnDel, AppIcon.Delete, "Eliminar", "Eliminar usuario seleccionado");
-        btnDel.Click += async (_, _) => await DeleteSelectedAsync();
-
-        var btnSave = new Button { Location = new Point(478, 390), Size = new Size(125, 34) };
-        AppTheme.StylePrimaryButton(btnSave, AppIcon.Save, "Guardar", "Guardar usuario y permisos");
-        btnSave.Click += async (_, _) => await SaveUserAsync();
-
-        var btnClose = new Button { Location = new Point(612, 390), Size = new Size(120, 34) };
-        AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar");
-        btnClose.Click += (_, _) => Close();
-
-        Controls.AddRange([_lstUsers, _txtNombre, _txtCargo, _txtPassword, grpPerfil, grpPriv, grpMod, btnNew, btnDel, btnSave, btnClose]);
-    }
-
-    private async Task LoadAsync(short? selectId = null)
-    {
-        _usuarios = await _services.Security.GetUsuariosAsync();
-        _lstUsers.DataSource = null;
-        _lstUsers.DataSource = _usuarios;
-        _lstUsers.DisplayMember = nameof(Usuario.Nombre);
-        if (selectId.HasValue)
-        {
-            Usuario? match = _usuarios.FirstOrDefault(u => u.Id == selectId.Value);
-            if (match is not null) _lstUsers.SelectedItem = match;
-        }
-        else if (_usuarios.Count > 0)
-        {
-            _lstUsers.SelectedIndex = 0;
-        }
-    }
-
-    private void BindUser(Usuario u)
-    {
-        _editing = u;
-        _txtNombre.Text = u.Nombre;
-        _txtCargo.Text = u.Cargo;
-        _txtPassword.Text = string.Empty;
-        _rbOp.Checked = u.Perfil == PerfilOperacion.OperacionPesaje;
-        _rbCon.Checked = u.Perfil == PerfilOperacion.Consulta;
-        _rbAdm.Checked = u.Perfil == PerfilOperacion.Administracion;
-        _chkMod.Checked = u.PuedeModificar;
-        _chkAdd.Checked = u.PuedeAgregar;
-        _chkDel.Checked = u.PuedeEliminar;
-        _chkPrn.Checked = u.PuedeImprimir;
-        _chkSup.Checked = u.SupervisorSistema;
-        _chkJefe.Checked = u.JefeTurno;
-        _chkPesaje.Checked = u.IngresoPesaje;
-        _chkGestion.Checked = u.IngresoGestion;
-        _chkActivo.Checked = u.Activo;
-        _chkCambioPw.Checked = u.PuedeCambiarPassword;
-    }
-
-    private async Task SaveUserAsync()
-    {
-        if (!PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AdministrarUsuarios))
-        {
-            MessageBox.Show(this, "No está autorizado para administrar usuarios.", "Seguridad", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(_txtNombre.Text))
-        {
-            MessageBox.Show(this, "Debe ingresar el nombre del usuario.", "Validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        if (_editing is null) _editing = new Usuario();
-        if (_editing.Id == 0 && string.IsNullOrWhiteSpace(_txtPassword.Text))
-        {
-            MessageBox.Show(this, "Debe asignar una contraseña inicial para el nuevo usuario.", "Validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-
-        _editing.Nombre = _txtNombre.Text.Trim();
-        _editing.Cargo = _txtCargo.Text.Trim();
-        _editing.Perfil = _rbAdm.Checked ? PerfilOperacion.Administracion : (_rbCon.Checked ? PerfilOperacion.Consulta : PerfilOperacion.OperacionPesaje);
-        _editing.PuedeModificar = _chkMod.Checked;
-        _editing.PuedeAgregar = _chkAdd.Checked;
-        _editing.PuedeEliminar = _chkDel.Checked;
-        _editing.PuedeImprimir = _chkPrn.Checked;
-        _editing.SupervisorSistema = _chkSup.Checked;
-        _editing.JefeTurno = _chkJefe.Checked;
-        _editing.IngresoPesaje = _chkPesaje.Checked;
-        _editing.IngresoGestion = _chkGestion.Checked;
-        _editing.Activo = _chkActivo.Checked;
-        _editing.PuedeCambiarPassword = _chkCambioPw.Checked;
-
-        short id = await _services.Security.SaveUsuarioAsync(_editing, _txtPassword.Text.Trim(), _services.UsuarioActual?.Id ?? 0);
-        await LoadAsync(id);
-        MessageBox.Show(this, "Usuario guardado correctamente.", "Usuarios", MessageBoxButtons.OK, MessageBoxIcon.Information);
-    }
-
-    private async Task DeleteSelectedAsync()
-    {
-        if (_editing is null || _editing.Id <= 0) return;
-        if (_editing.Id == _services.UsuarioActual?.Id)
-        {
-            MessageBox.Show(this, "No puede eliminar su propio usuario con la sesión iniciada.", "Seguridad", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        if (MessageBox.Show(this, $"¿Eliminar usuario '{_editing.Nombre}'?", "Confirmar", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-        await _services.Security.DeleteUsuarioAsync(_editing.Id, _services.UsuarioActual?.Id ?? 0);
-        await LoadAsync();
-    }
-}

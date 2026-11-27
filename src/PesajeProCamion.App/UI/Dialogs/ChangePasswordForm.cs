@@ -19,25 +19,32 @@ public sealed class ChangePasswordForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(410, 170);
+        ClientSize = new Size(440, 198);
+        MinimumSize = new Size(420, 190);
         BackColor = AppTheme.BackgroundLight;
+        AppTheme.ApplyFormIcon(this);
 
         var lbl1 = new Label { Text = "Nueva Contraseña", Location = new Point(22, 24), AutoSize = true, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
-        _txtPw1.Location = new Point(190, 21);
-        _txtPw1.Width = 185;
+        _txtPw1.Location = new Point(194, 21);
+        _txtPw1.Width = 220;
         _txtPw1.UseSystemPasswordChar = true;
-        _txtPw1.CharacterCasing = CharacterCasing.Upper;
         _txtPw1.MaxLength = 32;
 
         var lbl2 = new Label { Text = "Confirmar Contraseña", Location = new Point(22, 62), AutoSize = true, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
-        _txtPw2.Location = new Point(190, 59);
-        _txtPw2.Width = 185;
+        _txtPw2.Location = new Point(194, 59);
+        _txtPw2.Width = 220;
         _txtPw2.UseSystemPasswordChar = true;
-        _txtPw2.CharacterCasing = CharacterCasing.Upper;
         _txtPw2.MaxLength = 32;
 
-        _btnAceptar.Location = new Point(162, 112);
-        _btnAceptar.Size = new Size(105, 34);
+        var chkShow = new CheckBox { Text = "Mostrar contraseñas", Location = new Point(194, 94), AutoSize = true, Font = AppTheme.FontBody };
+        chkShow.CheckedChanged += (_, _) =>
+        {
+            _txtPw1.UseSystemPasswordChar = !chkShow.Checked;
+            _txtPw2.UseSystemPasswordChar = !chkShow.Checked;
+        };
+
+        _btnAceptar.Location = new Point(182, 138);
+        _btnAceptar.Size = new Size(112, 36);
         AppTheme.StylePrimaryButton(_btnAceptar, AppIcon.Check, "Aceptar", "Guardar nueva contraseña");
         _btnAceptar.Click += (_, _) =>
         {
@@ -56,14 +63,14 @@ public sealed class ChangePasswordForm : Form
             Close();
         };
 
-        _btnCancelar.Location = new Point(275, 112);
-        _btnCancelar.Size = new Size(100, 34);
+        _btnCancelar.Location = new Point(302, 138);
+        _btnCancelar.Size = new Size(112, 36);
         AppTheme.StyleSecondaryButton(_btnCancelar, AppIcon.Cancel, "Cancelar", "Cancelar cambio");
         _btnCancelar.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
 
         AcceptButton = _btnAceptar;
         CancelButton = _btnCancelar;
-        Controls.AddRange([lbl1, _txtPw1, lbl2, _txtPw2, _btnAceptar, _btnCancelar]);
+        Controls.AddRange([lbl1, _txtPw1, lbl2, _txtPw2, chkShow, _btnAceptar, _btnCancelar]);
     }
 
     public string NuevaPassword { get; private set; } = string.Empty;

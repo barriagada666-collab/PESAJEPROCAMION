@@ -12,16 +12,11 @@ public sealed class ManualWeightDialog : Form
     public ManualWeightDialog(int initialWeight = 0)
     {
         Text = "Ingresar Peso Manual";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(340, 145);
-        BackColor = AppTheme.BackgroundLight;
+        AppTheme.ConfigureResponsiveDialog(this, 370, 160, 350, 155, resizable: false);
 
         var lbl = new Label { Text = "PESO (kg)", Location = new Point(22, 16), AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = AppTheme.NavyDark };
         _numPeso.Location = new Point(22, 42);
-        _numPeso.Size = new Size(294, 42);
+        _numPeso.Size = new Size(324, 42);
         _numPeso.BackColor = AppTheme.LcdBackground;
         _numPeso.ForeColor = AppTheme.LcdDigitOn;
         _numPeso.Font = new Font("Consolas", 22f, FontStyle.Bold);
@@ -31,11 +26,11 @@ public sealed class ManualWeightDialog : Form
         _numPeso.ThousandsSeparator = true;
         _numPeso.Value = Math.Clamp(initialWeight, 0, 200_000);
 
-        var btnOk = new Button { Location = new Point(122, 96), Size = new Size(94, 34) };
+        var btnOk = new Button { Location = new Point(116, 102), Size = new Size(110, 36) };
         AppTheme.StylePrimaryButton(btnOk, AppIcon.Check, "Aceptar", "Confirmar peso ingresado");
         btnOk.Click += (_, _) => { WeightKg = (int)_numPeso.Value; DialogResult = DialogResult.OK; Close(); };
 
-        var btnCancel = new Button { Location = new Point(222, 96), Size = new Size(94, 34) };
+        var btnCancel = new Button { Location = new Point(236, 102), Size = new Size(110, 36) };
         AppTheme.StyleSecondaryButton(btnCancel, AppIcon.Cancel, "Cancelar", "Cancelar");
         btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
 
@@ -47,7 +42,7 @@ public sealed class ManualWeightDialog : Form
     public int WeightKg { get; private set; }
 }
 
-/// <summary>Diálogo limpio para reimpresión de ticket por folio.</summary>
+/// <summary>Diálogo limpio para búsqueda e impresión de ticket por folio.</summary>
 public sealed class FolioTicketDialog : Form
 {
     private readonly NumericUpDown _numFolio = new();
@@ -55,16 +50,11 @@ public sealed class FolioTicketDialog : Form
     public FolioTicketDialog()
     {
         Text = "Buscar Folio de Pesaje";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(330, 140);
-        BackColor = AppTheme.BackgroundLight;
+        AppTheme.ConfigureResponsiveDialog(this, 360, 152, 340, 148, resizable: false);
 
         var lbl = new Label { Text = "FOLIO DE PESAJE", Location = new Point(22, 16), AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = AppTheme.NavyDark };
         _numFolio.Location = new Point(22, 42);
-        _numFolio.Size = new Size(284, 36);
+        _numFolio.Size = new Size(314, 36);
         _numFolio.BackColor = AppTheme.LcdBackground;
         _numFolio.ForeColor = AppTheme.LcdDigitOn;
         _numFolio.Font = new Font("Consolas", 18f, FontStyle.Bold);
@@ -72,11 +62,11 @@ public sealed class FolioTicketDialog : Form
         _numFolio.Minimum = 1;
         _numFolio.Maximum = 99_999_999;
 
-        var btnOk = new Button { Location = new Point(112, 92), Size = new Size(96, 34) };
-        AppTheme.StylePrimaryButton(btnOk, AppIcon.Search, "Buscar", "Buscar e imprimir folio");
+        var btnOk = new Button { Location = new Point(108, 96), Size = new Size(108, 36) };
+        AppTheme.StylePrimaryButton(btnOk, AppIcon.Search, "Buscar", "Buscar y visualizar folio");
         btnOk.Click += (_, _) => { Folio = (int)_numFolio.Value; DialogResult = DialogResult.OK; Close(); };
 
-        var btnCancel = new Button { Location = new Point(214, 92), Size = new Size(92, 34) };
+        var btnCancel = new Button { Location = new Point(224, 96), Size = new Size(112, 36) };
         AppTheme.StyleSecondaryButton(btnCancel, AppIcon.Cancel, "Cancelar", "Cancelar");
         btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
 
@@ -88,7 +78,7 @@ public sealed class FolioTicketDialog : Form
     public int Folio { get; private set; }
 }
 
-/// <summary>Diálogo limpio para elegir cantidad de copias del Ticket de Pesaje (igual que mockup Ticket de Pesaje).</summary>
+/// <summary>Diálogo limpio para elegir cantidad de copias del Ticket de Pesaje.</summary>
 public sealed class TicketCopiesDialog : Form
 {
     private readonly NumericUpDown _numCopias = new();
@@ -96,13 +86,7 @@ public sealed class TicketCopiesDialog : Form
     public TicketCopiesDialog(int initialCopies = 1)
     {
         Text = "Ticket de Pesaje";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(340, 148);
-        BackColor = AppTheme.BackgroundLight;
-        AppTheme.ApplyFormIcon(this);
+        AppTheme.ConfigureResponsiveDialog(this, 360, 156, 340, 150, resizable: false);
 
         Controls.Add(new Label
         {
@@ -113,17 +97,17 @@ public sealed class TicketCopiesDialog : Form
             ForeColor = AppTheme.TextPrimary
         });
 
-        _numCopias.SetBounds(178, 25, 92, 30);
+        _numCopias.SetBounds(178, 25, 110, 30);
         _numCopias.Minimum = 1;
         _numCopias.Maximum = 20;
         _numCopias.Font = new Font("Segoe UI", 12f, FontStyle.Bold);
         _numCopias.Value = Math.Clamp(initialCopies, 1, 20);
 
-        var btnOk = new Button { Location = new Point(44, 86), Size = new Size(120, 36) };
+        var btnOk = new Button { Location = new Point(44, 88), Size = new Size(126, 36) };
         AppTheme.StylePrimaryButton(btnOk, AppIcon.Print, "Imprimir", "Previsualizar e imprimir copias seleccionadas");
         btnOk.Click += (_, _) => { Copies = (short)_numCopias.Value; DialogResult = DialogResult.OK; Close(); };
 
-        var btnCancel = new Button { Location = new Point(176, 86), Size = new Size(118, 36) };
+        var btnCancel = new Button { Location = new Point(182, 88), Size = new Size(124, 36) };
         AppTheme.StyleSecondaryButton(btnCancel, AppIcon.Cancel, "Cancelar", "Cancelar impresión");
         btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
 

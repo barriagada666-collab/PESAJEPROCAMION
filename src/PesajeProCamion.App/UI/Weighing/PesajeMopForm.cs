@@ -65,12 +65,10 @@ public sealed class PesajeMopForm : Form
         FolioPesajeAsociado = folioPesajeAsociado ?? 0;
 
         Text = "Pesaje por Ejes - Normativa M.O.P.";
-        ClientSize = new Size(980, 620);
-        StartPosition = FormStartPosition.CenterParent;
-        BackColor = AppTheme.BackgroundLight;
+        AppTheme.ConfigureResponsiveDialog(this, 1060, 650, 940, 580, resizable: true);
 
         BuildUi();
-        Load += async (_, _) => await InitDataAsync(patenteInicial, tipoMopInicial, largoInicial);
+        Load += async (_, _) => await AppTheme.SafeLoadAsync(this, "Pesaje MOP", () => InitDataAsync(patenteInicial, tipoMopInicial, largoInicial));
         FormClosing += (_, _) =>
         {
             _services.Scale.ReadingReceived -= OnReadingReceived;
@@ -83,12 +81,15 @@ public sealed class PesajeMopForm : Form
 
     private void BuildUi()
     {
-        var topPanel = new Panel { Dock = DockStyle.Top, Height = 104, BackColor = AppTheme.NavyDark, Padding = new Padding(14, 10, 14, 10) };
-        _lcd.Location = new Point(16, 11);
-        _lcd.Size = new Size(340, 82);
+        var topPanel = new TableLayoutPanel { Dock = DockStyle.Top, Height = 104, BackColor = AppTheme.NavyDark, Padding = new Padding(12, 10, 12, 10), ColumnCount = 3, RowCount = 1 };
+        topPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 344f));
+        topPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45f));
+        topPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55f));
+        topPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-        _semaforo.Location = new Point(372, 11);
-        _semaforo.Size = new Size(270, 82);
+        _lcd.Dock = DockStyle.Fill;
+        _semaforo.Dock = DockStyle.Fill;
+        _semaforo.Margin = new Padding(10, 0, 10, 0);
         _semaforo.BackColor = AppTheme.AccentEmerald;
         _lblEstado.Dock = DockStyle.Fill;
         _lblEstado.TextAlign = ContentAlignment.MiddleCenter;
@@ -97,16 +98,18 @@ public sealed class PesajeMopForm : Form
         _lblEstado.Text = "LISTO PARA INICIAR";
         _semaforo.Controls.Add(_lblEstado);
 
-        var statsPanel = new Panel { Location = new Point(656, 11), Size = new Size(308, 82), BackColor = Color.FromArgb(24, 48, 82) };
-        _lblBruto.SetBounds(12, 8, 285, 22); _lblBruto.ForeColor = Color.White; _lblBruto.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
-        _lblMaximo.SetBounds(12, 31, 285, 22); _lblMaximo.ForeColor = Color.LightSteelBlue; _lblMaximo.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
-        _lblExceso.SetBounds(12, 54, 285, 22); _lblExceso.ForeColor = Color.Gold; _lblExceso.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+        var statsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(24, 48, 82), Padding = new Padding(12, 8, 12, 8) };
+        _lblBruto.Dock = DockStyle.Top; _lblBruto.Height = 22; _lblBruto.ForeColor = Color.White; _lblBruto.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
+        _lblMaximo.Dock = DockStyle.Top; _lblMaximo.Height = 22; _lblMaximo.ForeColor = Color.LightSteelBlue; _lblMaximo.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+        _lblExceso.Dock = DockStyle.Top; _lblExceso.Height = 22; _lblExceso.ForeColor = Color.Gold; _lblExceso.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
         _lblBruto.Text = "BRUTO: 0 kg"; _lblMaximo.Text = "MÁXIMO: 0 kg"; _lblExceso.Text = "SOBREPESO: 0 kg";
-        statsPanel.Controls.AddRange([_lblBruto, _lblMaximo, _lblExceso]);
-        topPanel.Controls.AddRange([_lcd, _semaforo, statsPanel]);
+        statsPanel.Controls.AddRange([_lblExceso, _lblMaximo, _lblBruto]);
+        topPanel.Controls.Add(_lcd, 0, 0);
+        topPanel.Controls.Add(_semaforo, 1, 0);
+        topPanel.Controls.Add(statsPanel, 2, 0);
 
-        var metaPanel = new Panel { Dock = DockStyle.Top, Height = 108, BackColor = AppTheme.SurfaceCard, Padding = new Padding(14, 8, 14, 8) };
-        metaPanel.Controls.Add(new Label { Text = "Folio MOP:", Location = new Point(16, 14), AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
+        var metaPanel = new Panel { Dock = DockStyle.Top, Height = 86, BackColor = AppTheme.SurfaceCard, Padding = new Padding(12, 8, 12, 6), AutoScroll = true };
+        metaPanel.Controls.Add(new Label { Text = "Folio MOP:", Location = new Point(14, 14), AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
         _txtFolio.SetBounds(95, 11, 80, 24);
         metaPanel.Controls.Add(new Label { Text = "Patente:", Location = new Point(190, 14), AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
         _txtPatente.SetBounds(252, 11, 95, 24);
@@ -117,7 +120,7 @@ public sealed class PesajeMopForm : Form
         metaPanel.Controls.Add(new Label { Text = "Largo (m):", Location = new Point(766, 14), AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
         _numLargo.SetBounds(838, 11, 64, 24);
 
-        metaPanel.Controls.Add(new Label { Text = "Transportista:", Location = new Point(16, 48), AutoSize = true });
+        metaPanel.Controls.Add(new Label { Text = "Transportista:", Location = new Point(14, 48), AutoSize = true });
         _txtTransp.SetBounds(108, 45, 160, 24);
         metaPanel.Controls.Add(new Label { Text = "Chofer:", Location = new Point(282, 48), AutoSize = true });
         _txtChofer.SetBounds(336, 45, 186, 24);
@@ -128,45 +131,54 @@ public sealed class PesajeMopForm : Form
 
         metaPanel.Controls.AddRange([_txtFolio, _txtPatente, _txtAcoplado, _cmbTipoMop, _numLargo, _txtTransp, _txtChofer, _txtGuia, _cmbTipoCarga]);
 
-        var actionsBar = new Panel { Dock = DockStyle.Top, Height = 50, BackColor = AppTheme.BackgroundLight };
-        _btnModo.SetBounds(16, 8, 128, 34);
+        var actionsBar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 52,
+            BackColor = AppTheme.BackgroundLight,
+            Padding = new Padding(12, 8, 12, 6),
+            WrapContents = true,
+            AutoSize = true
+        };
+        _btnModo.Size = new Size(146, 36);
         AppTheme.StyleSecondaryButton(_btnModo, AppIcon.Settings, "Modo: Estático", "Alternar entre captura estática o dinámica");
         _btnModo.Click += (_, _) =>
         {
             _modoDinamico = !_modoDinamico;
             _btnModo.Text = _modoDinamico ? "Modo: Dinámico" : "Modo: Estático";
+            AppTheme.EnsureButtonFits(_btnModo, 36);
             _btnRegEje.Enabled = _activo && !_modoDinamico;
         };
 
-        _btnIniciar.SetBounds(152, 8, 128, 34);
+        _btnIniciar.Size = new Size(140, 36);
         AppTheme.StylePrimaryButton(_btnIniciar, AppIcon.AxleMop, "Iniciar Pesaje", "Comenzar captura por ejes");
         _btnIniciar.Click += (_, _) => StartWeighing();
 
-        _btnRegEje.SetBounds(288, 8, 136, 34);
+        _btnRegEje.Size = new Size(144, 36);
         AppTheme.StylePrimaryButton(_btnRegEje, AppIcon.Add, "Registrar Eje", "Capturar peso del eje actual");
         _btnRegEje.Enabled = false;
         _btnRegEje.Click += (_, _) => RegisterStaticAxle();
 
-        _btnDemo.SetBounds(432, 8, 134, 34);
+        _btnDemo.Size = new Size(162, 36);
         AppTheme.StyleSecondaryButton(_btnDemo, AppIcon.Refresh, "Reproducir Demo", "Simular pasada con curva DEMO1 de la base de datos", AppTheme.AccentAmber);
         _btnDemo.Click += async (_, _) => await RunDemoAsync();
 
-        _btnTerminar.SetBounds(574, 8, 160, 34);
+        _btnTerminar.Size = new Size(182, 36);
         AppTheme.StylePrimaryButton(_btnTerminar, AppIcon.Save, "Terminar e Imprimir", "Guardar pesaje MOP e imprimir boleto");
         _btnTerminar.Enabled = false;
         _btnTerminar.Click += async (_, _) => await FinishAndSaveAsync();
 
-        _btnVerNorma.SetBounds(742, 8, 118, 34);
+        _btnVerNorma.Size = new Size(124, 36);
         AppTheme.StyleSecondaryButton(_btnVerNorma, AppIcon.List, "Tipos MOP", "Ver normativa oficial Decreto 158/80");
         _btnVerNorma.Click += (_, _) => ShowNormativaModal();
 
-        _btnCancelar.SetBounds(868, 8, 96, 34);
+        _btnCancelar.Size = new Size(106, 36);
         AppTheme.StyleDangerButton(_btnCancelar, AppIcon.Cancel, "Cerrar", "Cancelar / Cerrar");
         _btnCancelar.Click += (_, _) => Close();
 
         actionsBar.Controls.AddRange([_btnModo, _btnIniciar, _btnRegEje, _btnDemo, _btnTerminar, _btnVerNorma, _btnCancelar]);
 
-        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 215, BackColor = AppTheme.BorderSubtle };
+        var split = new SplitContainer { Size = new Size(1020, 400), Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 200, BackColor = AppTheme.BorderSubtle };
         AppTheme.StyleDataGrid(_gridEjes);
         _gridEjes.Dock = DockStyle.Fill;
         _gridEjes.Columns.AddRange([

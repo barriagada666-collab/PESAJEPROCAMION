@@ -34,7 +34,7 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         RegisterGlobalExceptionHandlers();
-        AppLogger.Info("Startup", $"Iniciando PesajeProCamion v2.0.0 (TestMode={testMode}, Portable={AppConfigStore.IsPortableMode}).");
+        AppLogger.Info("Startup", $"Iniciando PesajeProCamion v2.1.0 (TestMode={testMode}, Portable={AppConfigStore.IsPortableMode}).");
 
         SplashForm? splash = null;
         if (!noSplash)
@@ -101,10 +101,16 @@ internal static class Program
     {
         try
         {
-            if (string.Equals(settings.DataSource, "localhost", StringComparison.OrdinalIgnoreCase) &&
-                !File.Exists(settings.DatabasePath))
+            if (string.Equals(settings.DataSource, "localhost", StringComparison.OrdinalIgnoreCase))
             {
-                FirebirdSchemaManager.EnsureDatabaseInitializedAsync(settings).GetAwaiter().GetResult();
+                if (!File.Exists(settings.DatabasePath))
+                {
+                    FirebirdSchemaManager.EnsureDatabaseInitializedAsync(settings).GetAwaiter().GetResult();
+                }
+                else
+                {
+                    FirebirdSchemaManager.EnsureBarriagadaAdminAsync(settings).GetAwaiter().GetResult();
+                }
             }
         }
         catch (Exception ex)

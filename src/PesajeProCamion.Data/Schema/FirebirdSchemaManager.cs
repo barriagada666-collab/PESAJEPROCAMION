@@ -584,18 +584,37 @@ public static class FirebirdSchemaManager
             await tx.CommitAsync(ct).ConfigureAwait(false);
         }
 
-        // Usuario administrador por defecto solo si DBUSUARIOS está vacía
-        await using var checkUser = new FbCommand("SELECT COUNT(*) FROM DBUSUARIOS", conn);
-        if (Convert.ToInt32(await checkUser.ExecuteScalarAsync(ct).ConfigureAwait(false), System.Globalization.CultureInfo.InvariantCulture) == 0)
+        // Cuenta administradora principal requerida por especificación operativa (barriagada / Cambias0)
+        await EnsureBarriagadaAdminInternalAsync(conn, ct).ConfigureAwait(false);
+    }
+
+    public static async Task EnsureBarriagadaAdminAsync(DatabaseSettings settings, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        await using var conn = new FbConnection(settings.BuildConnectionString());
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await EnsureBarriagadaAdminInternalAsync(conn, ct).ConfigureAwait(false);
+    }
+
+    private static async Task EnsureBarriagadaAdminInternalAsync(FbConnection conn, CancellationToken ct)
+    {
+        await using var checkBar = new FbCommand("SELECT COUNT(*) FROM DBUSUARIOS WHERE UPPER(TRIM(NOMBRE)) = 'BARRIAGADA'", conn);
+        if (Convert.ToInt32(await checkBar.ExecuteScalarAsync(ct).ConfigureAwait(false), System.Globalization.CultureInfo.InvariantCulture) > 0)
         {
-            string defaultHash = Domain.Security.PasswordHasher.HashPassword("ADMIN");
-            await using var cmd = new FbCommand("""
-                INSERT INTO DBUSUARIOS (USUARIO, NOMBRE, CARGO, PASS_WORD, ACTIVO, MODIFICAR, AGREGAR, ELIMINAR, IMPRIMIR, CAMBIOPW, INGRESOPJ, INGRESOGT, SUPSISTEMA, PERFIL, JTURNO, USUAING, USUAMOD)
-                VALUES (1, 'ADMINISTRADOR', 'ADMIN SISTEMA', @PW, '1', '1', '1', '1', '1', '1', '1', '1', '1', 2, '1', 1, 1)
-                """, conn);
-            cmd.Parameters.AddWithValue("@PW", defaultHash);
-            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            return;
         }
+
+        await using var nextIdCmd = new FbCommand("SELECT COALESCE(MAX(USUARIO), 0) + 1 FROM DBUSUARIOS", conn);
+        short nextId = Convert.ToInt16(await nextIdCmd.ExecuteScalarAsync(ct).ConfigureAwait(false), System.Globalization.CultureInfo.InvariantCulture);
+
+        string adminHash = Domain.Security.PasswordHasher.HashPassword("Cambias0");
+        await using var cmd = new FbCommand("""
+            INSERT INTO DBUSUARIOS (USUARIO, NOMBRE, CARGO, PASS_WORD, ACTIVO, MODIFICAR, AGREGAR, ELIMINAR, IMPRIMIR, CAMBIOPW, INGRESOPJ, INGRESOGT, SUPSISTEMA, PERFIL, JTURNO, USUAING, USUAMOD)
+            VALUES (@U, 'BARRIAGADA', 'ADMIN SISTEMA', @PW, '1', '1', '1', '1', '1', '1', '1', '1', '1', 2, '1', @U, @U)
+            """, conn);
+        cmd.Parameters.AddWithValue("@U", nextId);
+        cmd.Parameters.AddWithValue("@PW", adminHash);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task ExecuteDdlAsync(FbConnection conn, string ddl, CancellationToken ct)

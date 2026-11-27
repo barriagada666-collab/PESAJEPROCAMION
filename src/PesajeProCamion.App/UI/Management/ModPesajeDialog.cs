@@ -113,11 +113,11 @@ public sealed class ModPesajeDialog : Form
         AppTheme.StyleDangerButton(btnAnular, AppIcon.Delete, _pesaje.Anulado ? "Reactivar" : "Anular Pesaje", "Anular o reactivar este folio");
         btnAnular.Click += async (_, _) => await ToggleAnularAsync();
 
-        var btnSave = new Button { Location = new Point(372, y), Size = new Size(125, 34) };
+        var btnSave = new Button { Location = new Point(366, y), Size = new Size(128, 36) };
         AppTheme.StylePrimaryButton(btnSave, AppIcon.Save, "Guardar", "Guardar modificaciones");
         btnSave.Click += async (_, _) => await SaveAsync();
 
-        var btnClose = new Button { Location = new Point(505, y), Size = new Size(110, 34) };
+        var btnClose = new Button { Location = new Point(502, y), Size = new Size(116, 36) };
         AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar");
         btnClose.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
 

@@ -32,6 +32,7 @@ public static class AppLogger
     private static string? _logDirectory;
 
     public static event EventHandler<AppLogEntry>? EntryLogged;
+    public static bool IsSilentTestHost { get; set; }
 
     public static string LogDirectory
     {

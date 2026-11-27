@@ -3,6 +3,7 @@ using System.Text;
 using PesajeProCamion.Data.Configuration;
 using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
+using PesajeProCamion.Domain.Services;
 using PesajeProCamion.Hardware.Export;
 using PesajeProCamion.Hardware.Printing;
 using PesajeProCamion.Hardware.Scale;
@@ -123,5 +124,74 @@ public sealed class HardwareAndExportTests
         AppLogger.Info("UnitTest", "Evento de prueba");
         AppLogger.ErrorDetail("UnitTest", "Error de prueba controlado", "Detalle de pila");
         Assert.Contains(AppLogger.GetEntries(), e => e.Message == "Error de prueba controlado");
+    }
+
+    [Fact]
+    public void DataExporter_ProducesValidPdf_MultiSheetAnalyticsXlsx_AndTicketPdf()
+    {
+        string tmpDir = Path.Combine(Path.GetTempPath(), $"pesaje_bi_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+        try
+        {
+            List<Pesaje> rows = Enumerable.Range(1, 45).Select(i => new Pesaje
+            {
+                FolioPesaje = 1000 + i,
+                Patente = i % 2 == 0 ? "CHHW80" : "HKWK38",
+                Cliente = "C01",
+                NombreCliente = "CAMBIASO CLIENTE",
+                Origen = "O01",
+                NombreOrigen = "PLACILLA",
+                Producto = "PR1",
+                NombreProducto = "SCRAP HDPE",
+                FechaIngreso = DateTime.Today,
+                HoraIngreso = "08:00",
+                FechaSalida = DateTime.Today,
+                HoraSalida = "08:40",
+                Bruto = 28000,
+                Tara = 12000,
+                Neto = 16000
+            }).ToList();
+
+            var filter = new ReportFilterCriteria { Desde = DateTime.Today.AddDays(-7), Hasta = DateTime.Today };
+            AnalyticsResult analytics = AnalyticsCalculator.FilterAndAnalyze(rows, filter);
+
+            string pdfReport = Path.Combine(tmpDir, "informe.pdf");
+            DataExporter.ExportToPdf(
+                pdfReport,
+                "INFORME ANALITICO KPI",
+                "Prueba multipágina",
+                [("Total Tickets", "45"), ("Toneladas", "720.00 t")],
+                ["Folio", "Patente", "Cliente", "Producto", "Neto"],
+                rows.Select(r => (IReadOnlyList<object?>)[r.FolioPesaje, r.Patente, r.NombreCliente, r.NombreProducto, r.Neto]).ToList());
+
+            string pdfContent = File.ReadAllText(pdfReport, Encoding.ASCII);
+            Assert.StartsWith("%PDF-1.4", pdfContent, StringComparison.Ordinal);
+            Assert.Contains("%%EOF", pdfContent, StringComparison.Ordinal);
+            Assert.Contains("/Count 2", pdfContent, StringComparison.Ordinal); // 45 rows span 2 landscape pages cleanly
+
+            string multiXlsx = Path.Combine(tmpDir, "analytics.xlsx");
+            DataExporter.ExportAnalyticsWorkbookToXlsx(multiXlsx, filter, analytics, rows);
+            using (ZipArchive zip = ZipFile.OpenRead(multiXlsx))
+            {
+                for (int s = 1; s <= 6; s++)
+                {
+                    Assert.NotNull(zip.GetEntry($"xl/worksheets/sheet{s}.xml"));
+                }
+            }
+
+            string ticketPdf = Path.Combine(tmpDir, "ticket_1001.pdf");
+            TicketPrinterService.ExportCommercialTicketToPdf(
+                ticketPdf,
+                rows[0],
+                new BasculaInfo { NombreEmpresa = "CAMBIASO HNOS", Direccion = "PLACILLA", Rut = "1-9" });
+            string ticketBytes = File.ReadAllText(ticketPdf, Encoding.ASCII);
+            Assert.StartsWith("%PDF-1.4", ticketBytes, StringComparison.Ordinal);
+            Assert.Contains("TICKET DE PESAJE COMERCIAL", ticketBytes, StringComparison.Ordinal);
+            Assert.Contains("%%EOF", ticketBytes, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(tmpDir, true);
+        }
     }
 }

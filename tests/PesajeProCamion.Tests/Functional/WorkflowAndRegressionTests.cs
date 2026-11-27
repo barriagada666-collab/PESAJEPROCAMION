@@ -11,6 +11,7 @@ namespace PesajeProCamion.Tests.Functional;
 public sealed class WorkflowAndRegressionTests
 {
     [Fact]
+    [Trait("Requires", "LocalFixture")]
     public async Task EndToEnd_CommercialAndMopWeighing_And_RegressionBugs_WorkCleanly()
     {
         string fdbPath = Path.Combine(Path.GetTempPath(), $"wm_func_{Guid.NewGuid():N}.fdb");
@@ -125,6 +126,111 @@ public sealed class WorkflowAndRegressionTests
             scale.EnableSimulation(await catalogs.GetConfigAsync(), 22340);
             Assert.Equal(22340, seen);
             Assert.Empty(await mopRepo.GetPesajesMopAsync(DateTime.Today, DateTime.Today));
+        }
+        finally
+        {
+            FirebirdSql.Data.FirebirdClient.FbConnection.ClearAllPools();
+            if (File.Exists(fdbPath)) File.Delete(fdbPath);
+        }
+    }
+
+    [Fact]
+    [Trait("Requires", "LocalFixture")]
+    public async Task AdminBarriagada_UserCrud_And_TicketFolioConflictProtection_WorkCleanly()
+    {
+        string fdbPath = Path.Combine(Path.GetTempPath(), $"wm_crud_{Guid.NewGuid():N}.fdb");
+        var settings = new DatabaseSettings { DataSource = "localhost", Port = 3050, DatabasePath = fdbPath };
+        try
+        {
+            await FirebirdSchemaManager.EnsureDatabaseInitializedAsync(settings);
+            var db = new DatabaseSessionFactory(settings);
+            var security = new SecurityRepository(db);
+            var weighing = new WeighingRepository(db);
+
+            // 1. Verificar cuenta administradora barriagada / Cambias0
+            Usuario? admin = await security.AuthenticateByLoginAsync(null, "barriagada", "Cambias0", 2);
+            Assert.NotNull(admin);
+            Assert.Equal("BARRIAGADA", admin.Nombre);
+            Assert.Equal(PerfilOperacion.Administracion, admin.Perfil);
+
+            // 2. CRUD Usuarios + Reset Password + Protección último administrador
+            await Assert.ThrowsAsync<InvalidOperationException>(() => security.DeleteUsuarioAsync(admin.Id, admin.Id));
+
+            short opId = await security.SaveUsuarioAsync(new Usuario
+            {
+                Nombre = "OPERADOR UNO",
+                Cargo = "BASCULA",
+                Perfil = PerfilOperacion.OperacionPesaje,
+                Activo = true,
+                PuedeAgregar = true,
+                PuedeImprimir = true,
+                IngresoPesaje = true
+            }, "ClaveInicial1", admin.Id);
+            Assert.True(opId > 0);
+            Assert.NotNull(await security.AuthenticateByLoginAsync(null, "OPERADOR UNO", "ClaveInicial1", 2));
+
+            await security.ResetPasswordAsync(opId, "Nueva999", admin.Id);
+            Assert.Null(await security.AuthenticateByLoginAsync(null, "OPERADOR UNO", "ClaveInicial1", 2));
+            Assert.NotNull(await security.AuthenticateByLoginAsync(null, "OPERADOR UNO", "Nueva999", 2));
+
+            await security.SetUsuarioActivoAsync(opId, false, admin.Id);
+            Assert.Null(await security.AuthenticateByLoginAsync(null, "OPERADOR UNO", "Nueva999", 2));
+
+            await security.DeleteUsuarioAsync(opId, admin.Id);
+
+            // 3. Crear y Modificar Tickets respetando En Proceso sin conflicto de folio
+            int inProcessFolio = await weighing.RegistrarIngresoTransitoAsync(new RegistroTransito
+            {
+                Patente = "PROC11",
+                FechaIngreso = DateTime.Today,
+                HoraIngreso = "10:00",
+                Bruto = 14000,
+                UsuarioIngreso = admin.Id
+            });
+
+            FolioAvailabilityResult chkInProcess = await weighing.CheckFolioAvailabilityAsync(inProcessFolio);
+            Assert.False(chkInProcess.Disponible);
+            Assert.Equal(FolioEstadoCheck.EnProcesoTransito, chkInProcess.Estado);
+
+            // Intentar crear ticket manual usando el folio EN PROCESO debe ser rechazado
+            await Assert.ThrowsAsync<InvalidOperationException>(() => weighing.CreateManualTicketAsync(new Pesaje
+            {
+                FolioPesaje = inProcessFolio,
+                Patente = "CHOC99",
+                Bruto = 20000,
+                Tara = 10000,
+                FechaIngreso = DateTime.Today,
+                HoraIngreso = "10:15",
+                FechaSalida = DateTime.Today,
+                HoraSalida = "10:25"
+            }, crearEnProceso: false, admin.Id));
+
+            // Modificar vehículo En Proceso manteniendo exactamente su folio sin colisión
+            RegistroTransito? trLoaded = await weighing.GetTransitoPorPatenteAsync("PROC11");
+            Assert.NotNull(trLoaded);
+            trLoaded.Observacion1 = "EDITADO EN PROCESO";
+            await weighing.ModificarTransitoAsync(trLoaded, admin.Id);
+            Assert.Equal("EDITADO EN PROCESO", (await weighing.GetTransitoPorPatenteAsync("PROC11"))!.Observacion1);
+
+            // Crear ticket manual automático obtiene folio siguiente libre (> inProcessFolio)
+            int manualFolio = await weighing.CreateManualTicketAsync(new Pesaje
+            {
+                Patente = "MANU22",
+                Bruto = 32000,
+                Tara = 12000,
+                FechaIngreso = DateTime.Today,
+                HoraIngreso = "11:00",
+                FechaSalida = DateTime.Today,
+                HoraSalida = "11:20"
+            }, crearEnProceso: false, admin.Id);
+            Assert.True(manualFolio > inProcessFolio);
+
+            Pesaje? manualLoaded = await weighing.GetPesajePorFolioAsync(manualFolio);
+            Assert.NotNull(manualLoaded);
+            Assert.Equal(20000, manualLoaded.Neto);
+            manualLoaded.Tara = 14000;
+            await weighing.ModificarPesajeAsync(manualLoaded, admin.Id);
+            Assert.Equal(18000, (await weighing.GetPesajePorFolioAsync(manualFolio))!.Neto);
         }
         finally
         {

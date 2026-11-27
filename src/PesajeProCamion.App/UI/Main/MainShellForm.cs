@@ -43,7 +43,7 @@ public sealed class MainShellForm : Form
 
         Text = "PesajeProCamion — Sistema Integral de Pesaje y Gestión";
         WindowState = FormWindowState.Maximized;
-        MinimumSize = new Size(1060, 720);
+        MinimumSize = new Size(1024, 700);
         BackColor = AppTheme.BackgroundLight;
         AppTheme.ApplyFormIcon(this);
 
@@ -52,7 +52,7 @@ public sealed class MainShellForm : Form
         BuildStatusBar();
         ApplyRolePermissions();
 
-        Load += async (_, _) => await InitializeShellAsync();
+        Load += async (_, _) => await AppTheme.SafeLoadAsync(this, "Inicio", InitializeShellAsync);
     }
 
     private void BuildMenu()
@@ -71,8 +71,22 @@ public sealed class MainShellForm : Form
             await _reportsTab.GenerateAsync();
         }));
         mOps.DropDownItems.Add(new ToolStripSeparator());
+        mOps.DropDownItems.Add(MakeMenuItem("Crear Nuevo Ticket Manual...", AppIcon.Add, async () =>
+        {
+            if (!PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro))
+            {
+                MessageBox.Show(this, "No tiene permiso para crear tickets.", "Acceso Denegado", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            using var f = new TicketEditorDialog(_services, TicketEditorMode.CreateNew);
+            if (f.ShowDialog(this) == DialogResult.OK)
+            {
+                await _pesajeTab.RefreshTransitoAsync();
+                await _gestionTab.RefreshAsync();
+            }
+        }));
         mOps.DropDownItems.Add(MakeMenuItem("Administración de Pesajes", AppIcon.List, () => SelectTab(1)));
-        mOps.DropDownItems.Add(MakeMenuItem("Centro de Informes y Auditoría", AppIcon.Audit, () => SelectTab(2)));
+        mOps.DropDownItems.Add(MakeMenuItem("Centro de Informes KPI y Auditoría", AppIcon.Chart, () => SelectTab(2)));
 
         var mCat = new ToolStripMenuItem("Catálogos");
         mCat.DropDownItems.Add(MakeMenuItem("Camiones", AppIcon.Truck, () => ShowCatalog(() => new CamionesForm(_services))));
@@ -111,6 +125,7 @@ public sealed class MainShellForm : Form
         };
 
         var mSes = new ToolStripMenuItem("Sesión");
+        mSes.DropDownItems.Add(MakeMenuItem("Cambiar Mi Contraseña...", AppIcon.Key, async () => await ChangeOwnPasswordAsync()));
         mSes.DropDownItems.Add(MakeMenuItem("Cambiar Usuario", AppIcon.Lock, async () => await SwitchUserAsync()));
         mSes.DropDownItems.Add(MakeMenuItem("Visor de Logs de Errores", AppIcon.Logs, () => { using var f = new ErrorLogViewerDialog(); f.ShowDialog(this); }));
         mSes.DropDownItems.Add(MakeMenuItem("Acerca de...", AppIcon.Info, () => { using var f = new AcercaForm(_services); f.ShowDialog(this); }));
@@ -201,6 +216,7 @@ public sealed class MainShellForm : Form
 
         await _pesajeTab.RefreshTransitoAsync();
         await _gestionTab.RefreshAsync();
+        await _reportsTab.GenerateAsync();
         UpdateStatusBar();
     }
 
@@ -218,6 +234,22 @@ public sealed class MainShellForm : Form
             await _pesajeTab.RefreshTransitoAsync();
             await _gestionTab.RefreshAsync();
             UpdateStatusBar();
+        }
+    }
+
+    private async Task ChangeOwnPasswordAsync()
+    {
+        if (_services.UsuarioActual is not { } u) return;
+        if (!PermissionService.EstaAutorizado(u, AccionAutorizacion.CambiarPassword))
+        {
+            MessageBox.Show(this, "Su perfil no está autorizado para cambiar su contraseña.", "Seguridad", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        using var dlg = new ChangePasswordForm();
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+        {
+            await _services.Security.ChangePasswordAsync(u.Id, dlg.NuevaPassword, u.Id);
+            MessageBox.Show(this, "Contraseña actualizada correctamente.", "Seguridad", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 

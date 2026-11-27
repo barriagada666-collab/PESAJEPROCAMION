@@ -17,7 +17,7 @@ public sealed class SplashForm : Form
     {
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(580, 310);
+        ClientSize = new Size(612, 316);
         BackColor = AppTheme.NavyDark;
         ShowInTaskbar = false;
         AppTheme.ApplyFormIcon(this);
@@ -26,7 +26,7 @@ public sealed class SplashForm : Form
         var leftPanel = new Panel
         {
             Location = new Point(0, 0),
-            Size = new Size(235, 310),
+            Size = new Size(236, 316),
             BackColor = AppTheme.NavyDark
         };
         leftPanel.Paint += (_, e) => AppTheme.PaintTealGradient(e.Graphics, leftPanel.ClientRectangle, includeGoldBottomAccent: false);
@@ -63,8 +63,8 @@ public sealed class SplashForm : Form
 
         var rightPanel = new Panel
         {
-            Location = new Point(235, 0),
-            Size = new Size(345, 310),
+            Location = new Point(236, 0),
+            Size = new Size(376, 316),
             BackColor = AppTheme.SurfaceCard
         };
         var picLogo = new PictureBox
@@ -77,7 +77,7 @@ public sealed class SplashForm : Form
         var lblTitle = new Label
         {
             Location = new Point(24, 88),
-            Size = new Size(298, 30),
+            Size = new Size(328, 30),
             Text = "PesajeProCamion",
             ForeColor = AppTheme.NavyDark,
             Font = new Font("Segoe UI", 16f, FontStyle.Bold)
@@ -85,14 +85,14 @@ public sealed class SplashForm : Form
         var lblSub = new Label
         {
             Location = new Point(24, 118),
-            Size = new Size(298, 22),
+            Size = new Size(328, 22),
             Text = "Sistema Integral de Pesaje de Camiones",
             ForeColor = AppTheme.NavyPrimary,
             Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
         };
 
         _progressBar.Location = new Point(24, 156);
-        _progressBar.Size = new Size(298, 16);
+        _progressBar.Size = new Size(328, 16);
         _progressBar.BackColor = AppTheme.BackgroundLight;
         _progressBar.BorderStyle = BorderStyle.FixedSingle;
         _progressBar.Paint += (_, e) =>
@@ -105,24 +105,24 @@ public sealed class SplashForm : Form
         };
 
         _lblStatus.Location = new Point(24, 184);
-        _lblStatus.Size = new Size(298, 42);
+        _lblStatus.Size = new Size(328, 44);
         _lblStatus.ForeColor = AppTheme.TextMuted;
         _lblStatus.Font = AppTheme.FontBody;
         _lblStatus.Text = "Inicializando servicios de báscula y base de datos...";
 
         var lblVer = new Label
         {
-            Location = new Point(24, 248),
-            Size = new Size(298, 18),
+            Location = new Point(24, 250),
+            Size = new Size(328, 18),
             TextAlign = ContentAlignment.MiddleRight,
-            Text = "Versión 2.0.0 LTS (.NET 10 Zero-Deps)",
+            Text = "Versión 2.1.0 LTS (.NET 10 Zero-Deps)",
             ForeColor = AppTheme.NavyPrimary,
             Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
         };
         var lblCopy = new Label
         {
-            Location = new Point(24, 268),
-            Size = new Size(298, 18),
+            Location = new Point(24, 270),
+            Size = new Size(328, 18),
             TextAlign = ContentAlignment.MiddleRight,
             Text = "Plataforma Corporativa Industrial",
             ForeColor = AppTheme.TextMuted,
