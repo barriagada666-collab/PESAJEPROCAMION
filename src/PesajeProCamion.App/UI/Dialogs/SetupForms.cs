@@ -39,6 +39,15 @@ public sealed class VisorSetupForm : Form
         FormClosing += (_, _) => _services.Scale.ReadingReceived -= OnReading;
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _services.Scale.ReadingReceived -= OnReading;
+        }
+        base.Dispose(disposing);
+    }
+
     private void BuildUi()
     {
         var header = new Panel { Dock = DockStyle.Top, Height = 44 };

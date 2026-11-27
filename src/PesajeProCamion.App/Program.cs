@@ -34,7 +34,7 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         RegisterGlobalExceptionHandlers();
-        AppLogger.Info("Startup", $"Iniciando PesajeProCamion v2.3.0 (TestMode={testMode}, Portable={AppConfigStore.IsPortableMode}).");
+        AppLogger.Info("Startup", $"Iniciando PesajeProCamion v2.4.0 (TestMode={testMode}, Portable={AppConfigStore.IsPortableMode}).");
 
         SplashForm? splash = null;
         if (!noSplash)
@@ -72,21 +72,21 @@ internal static class Program
         {
             if (e.ExceptionObject is Exception ex)
             {
-                AppLogger.Error("AppDomain", "Excepción crítica no controlada.", ex);
+                AppLogger.Critical("AppDomain", "Excepción crítica no controlada.", ex);
             }
         };
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
-            AppLogger.Error("TaskScheduler", "Excepción asíncrona no observada.", e.Exception);
+            AppLogger.ErrorCorrelated("TaskScheduler", "Excepción asíncrona no observada.", e.Exception);
             e.SetObserved();
         };
     }
 
     private static void ShowFatalModal(string source, Exception ex)
     {
-        AppLogger.Error(source, "Error inesperado en tiempo de ejecución.", ex);
+        string corrId = AppLogger.Critical(source, "Error inesperado en tiempo de ejecución.", ex);
         DialogResult res = MessageBox.Show(
-            $"Se produjo un error inesperado:\r\n{ex.Message}\r\n\r\nEl detalle completo se registró en los Logs de Errores.\r\n¿Desea abrir el Visor de Logs ahora?",
+            $"Se produjo un error inesperado al procesar la operación.\r\n\r\nCódigo de referencia: {corrId}\r\nEl detalle técnico sanitizado quedó registrado en los Logs de Errores.\r\n¿Desea abrir el Visor de Logs ahora?",
             "Control de Errores — PesajeProCamion",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Error);

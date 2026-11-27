@@ -724,6 +724,7 @@ public static partial class TicketPrinterService
         ArgumentException.ThrowIfNullOrWhiteSpace(printerName);
         ArgumentNullException.ThrowIfNull(content);
 
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         byte[] bytes = Encoding.GetEncoding(1252).GetBytes(content);
         IntPtr pBytes = Marshal.AllocCoTaskMem(bytes.Length);
         try

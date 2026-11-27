@@ -14,6 +14,7 @@ using Xunit;
 
 namespace PesajeProCamion.Tests.UI;
 
+[Collection("SequentialUiAndLogger")]
 public sealed class UiSmokeAndAuditTests
 {
     private static readonly string[] ForbiddenLegacyTypos =

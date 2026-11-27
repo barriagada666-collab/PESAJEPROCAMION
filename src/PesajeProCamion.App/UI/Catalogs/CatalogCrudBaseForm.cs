@@ -161,7 +161,7 @@ public abstract class CatalogCrudBaseForm<TItem> : Form
             Text = text,
             Location = new Point(x, y + 3),
             AutoSize = true,
-            Font = new Font("Segoe UI", 9.25f, FontStyle.Bold),
+            Font = AppTheme.FontBodyBold,
             ForeColor = AppTheme.TextPrimary
         };
         _formPanel.Controls.Add(lbl);
@@ -176,7 +176,7 @@ public abstract class CatalogCrudBaseForm<TItem> : Form
             Width = width,
             MaxLength = maxLength,
             CharacterCasing = casing,
-            Font = new Font("Segoe UI", 9.5f)
+            Font = AppTheme.FontInput
         };
         _formPanel.Controls.Add(tb);
         return tb;
@@ -279,10 +279,13 @@ public abstract class CatalogCrudBaseForm<TItem> : Form
             return;
         }
 
-        await PersistEntityAsync(entity, _services.UsuarioActual?.Id ?? 0);
-        _isNewRecord = false;
-        await ReloadAsync(key);
-        MessageBox.Show(this, "Registro guardado correctamente.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        await AppTheme.SafeLoadAsync(this, $"Guardar {Text}", async () =>
+        {
+            await PersistEntityAsync(entity, _services.UsuarioActual?.Id ?? 0);
+            _isNewRecord = false;
+            await ReloadAsync(key);
+            MessageBox.Show(this, "Registro guardado correctamente.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        });
     }
 
     private async Task DeleteCurrentAsync()
@@ -304,8 +307,11 @@ public abstract class CatalogCrudBaseForm<TItem> : Form
             return;
         }
 
-        await DeleteByKeyAsync(key);
-        await ReloadAsync();
+        await AppTheme.SafeLoadAsync(this, $"Eliminar {Text}", async () =>
+        {
+            await DeleteByKeyAsync(key);
+            await ReloadAsync();
+        });
     }
 
     private void OpenListSelector()

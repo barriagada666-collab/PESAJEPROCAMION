@@ -39,6 +39,8 @@ public sealed class ScaleReaderService : IDisposable
 
     public event EventHandler<ScaleReadingEventArgs>? ReadingReceived;
 
+    public int ActiveSubscriberCount => ReadingReceived?.GetInvocationList().Length ?? 0;
+
     public bool IsOpen => _port?.IsOpen == true || IsSimulationActive;
     public bool IsSerialOpen => _port?.IsOpen == true;
     public bool IsSimulationActive { get; private set; }
@@ -208,9 +210,16 @@ public sealed class ScaleReaderService : IDisposable
             {
                 return;
             }
-            byte[] buf = new byte[count];
-            int read = _port.Read(buf, 0, count);
-            ProcessIncomingBytes(buf.AsSpan(0, read));
+            byte[] buf = System.Buffers.ArrayPool<byte>.Shared.Rent(count);
+            try
+            {
+                int read = _port.Read(buf, 0, count);
+                ProcessIncomingBytes(buf.AsSpan(0, read));
+            }
+            finally
+            {
+                System.Buffers.ArrayPool<byte>.Shared.Return(buf);
+            }
         }
         catch (TimeoutException)
         {

@@ -40,7 +40,10 @@ public sealed class DatabaseSettings
     public string Charset { get; set; } = "UTF8";
     public int Dialect { get; set; } = 3;
     public int ConnectionTimeout { get; set; } = 10;
+    public int CommandTimeout { get; set; } = 30;
     public string? RawNetworkPath { get; set; }
+
+    public int EffectiveCommandTimeout => Math.Clamp(CommandTimeout, 5, 300);
     public FbServerType ServerType { get; set; } = FbServerType.Default;
 
     public static string GetDefaultDatabasePath()
@@ -64,6 +67,7 @@ public sealed class DatabaseSettings
         Charset = Charset,
         Dialect = Dialect,
         ConnectionTimeout = ConnectionTimeout,
+        CommandTimeout = CommandTimeout,
         RawNetworkPath = RawNetworkPath,
         ServerType = ServerType
     };
@@ -216,6 +220,7 @@ public static class RemoteDatabaseResolver
                     trial.Dialect = dialect;
                     trial.Charset = charset;
                     trial.ConnectionTimeout = 4;
+                    trial.CommandTimeout = 8;
                     if (isUnc)
                     {
                         trial.RawNetworkPath = inputPath;
@@ -247,7 +252,8 @@ public static class RemoteDatabaseResolver
                         }
 
                         sw.Stop();
-                        trial.ConnectionTimeout = 10;
+                        trial.ConnectionTimeout = baseSettings.ConnectionTimeout;
+                        trial.CommandTimeout = baseSettings.CommandTimeout;
                         string modeDesc = caps.IsLegacySchema ? "Esquema Legacy ODS 9 / Dialecto 1 Compatible" : "Esquema Moderno .NET/Firebird UTF8";
                         logs.Add($"ÉXITO: {effectiveHost}:{trial.Port} -> {pathCandidate} (Dialect={dialect}, Charset={charset}, {sw.ElapsedMilliseconds} ms)");
                         logs.Add($"Servidor: {conn.ServerVersion} | {modeDesc} | Empresa: {empresa} | Pesajes: {pesajesCount:N0}");

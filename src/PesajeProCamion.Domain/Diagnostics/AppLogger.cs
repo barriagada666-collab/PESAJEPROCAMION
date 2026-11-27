@@ -1,6 +1,6 @@
-using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace PesajeProCamion.Domain.Diagnostics;
 
@@ -10,7 +10,9 @@ public enum AppLogLevel
     Warn,
     Error,
     Sql,
-    Serial
+    Serial,
+    Debug,
+    Critical
 }
 
 public sealed record AppLogEntry(
@@ -18,21 +20,28 @@ public sealed record AppLogEntry(
     AppLogLevel Level,
     string Source,
     string Message,
-    string? Detail);
+    string? Detail,
+    string? CorrelationId = null,
+    int RepeatCount = 1);
 
 /// <summary>
-/// Sistema centralizado de trazabilidad y logs de errores con buffer en memoria y archivo diario rotativo
-/// (compatible con ejecución instalada y modo portable sin dependencias).
+/// Sistema centralizado de trazabilidad y logs de errores con buffer en memoria, sanitización de secretos,
+/// IDs de correlación, deduplicación de errores repetidos y archivo diario con rotación por tamaño y retención.
 /// </summary>
-public static class AppLogger
+public static partial class AppLogger
 {
     private const int MaxMemoryEntries = 1000;
+    private static readonly TimeSpan DeduplicationWindow = TimeSpan.FromSeconds(5);
     private static readonly Lock SyncLock = new();
-    private static readonly ConcurrentQueue<AppLogEntry> Entries = new();
+    private static readonly List<AppLogEntry> Entries = [];
     private static string? _logDirectory;
+    private static DateTime _lastRetentionCheckDate = DateTime.MinValue;
 
     public static event EventHandler<AppLogEntry>? EntryLogged;
     public static bool IsSilentTestHost { get; set; }
+    public static long MaxFileSizeBytes { get; set; } = 5L * 1024L * 1024L;
+    public static int RetentionDays { get; set; } = 30;
+    public static string? LastWriteWarning { get; private set; }
 
     public static string LogDirectory
     {
@@ -50,26 +59,58 @@ public static class AppLogger
     public static string CurrentLogFilePath =>
         Path.Combine(LogDirectory, $"pesaje_{DateTime.Today:yyyyMMdd}.log");
 
+    public static string NewCorrelationId() => $"OP-{Guid.NewGuid():N}"[..11].ToUpperInvariant();
+
     public static void ConfigureDirectory(string directory)
     {
         if (!string.IsNullOrWhiteSpace(directory))
         {
             Directory.CreateDirectory(directory);
-            _logDirectory = directory;
+            lock (SyncLock)
+            {
+                _logDirectory = directory;
+                _lastRetentionCheckDate = DateTime.MinValue;
+            }
+        }
+    }
+
+    public static void ResetDirectory()
+    {
+        lock (SyncLock)
+        {
+            _logDirectory = null;
+            _lastRetentionCheckDate = DateTime.MinValue;
         }
     }
 
     public static void Info(string source, string message, string? detail = null)
         => Log(AppLogLevel.Info, source, message, detail);
 
+    public static void Debug(string source, string message, string? detail = null)
+        => Log(AppLogLevel.Debug, source, message, detail);
+
     public static void Warn(string source, string message, string? detail = null)
-        => Log(AppLogLevel.Warn, source, message, detail);
+        => Log(AppLogLevel.Warn, source, message, detail, NewCorrelationId());
 
     public static void Error(string source, string message, Exception? ex = null)
-        => Log(AppLogLevel.Error, source, message, ex?.ToString());
+        => Log(AppLogLevel.Error, source, message, ex?.ToString(), NewCorrelationId());
+
+    public static string ErrorCorrelated(string source, string message, Exception? ex = null)
+    {
+        string corrId = NewCorrelationId();
+        Log(AppLogLevel.Error, source, message, ex?.ToString(), corrId);
+        return corrId;
+    }
+
+    public static string Critical(string source, string message, Exception? ex = null)
+    {
+        string corrId = NewCorrelationId();
+        Log(AppLogLevel.Critical, source, message, ex?.ToString(), corrId);
+        return corrId;
+    }
 
     public static void ErrorDetail(string source, string message, string? detail)
-        => Log(AppLogLevel.Error, source, message, detail);
+        => Log(AppLogLevel.Error, source, message, detail, NewCorrelationId());
 
     public static void Sql(string source, string message, string? detail = null)
         => Log(AppLogLevel.Sql, source, message, detail);
@@ -77,36 +118,91 @@ public static class AppLogger
     public static void Serial(string source, string message, string? detail = null)
         => Log(AppLogLevel.Serial, source, message, detail);
 
-    public static void Log(AppLogLevel level, string source, string message, string? detail = null)
+    public static string SanitizeText(string? input)
     {
-        var entry = new AppLogEntry(DateTime.Now, level, source, message, detail);
-        Entries.Enqueue(entry);
-        while (Entries.Count > MaxMemoryEntries)
+        if (string.IsNullOrEmpty(input))
         {
-            Entries.TryDequeue(out _);
+            return string.Empty;
+        }
+        string masked = CredentialPairRegex().Replace(input, "$1=***REDACTED***");
+        return TokenRegex().Replace(masked, "***REDACTED***");
+    }
+
+    public static void Log(AppLogLevel level, string source, string message, string? detail = null, string? correlationId = null)
+    {
+        DateTime now = DateTime.Now;
+        string cleanSource = string.IsNullOrWhiteSpace(source) ? "App" : source.Trim();
+        string cleanMessage = SanitizeText(message);
+        string? cleanDetail = detail is null ? null : SanitizeText(detail);
+        string? effectiveCorr = string.IsNullOrWhiteSpace(correlationId)
+            ? (level is AppLogLevel.Warn or AppLogLevel.Error or AppLogLevel.Critical ? NewCorrelationId() : null)
+            : correlationId.Trim();
+
+        AppLogEntry entry;
+        bool shouldWriteToDisk = true;
+        lock (SyncLock)
+        {
+            if (Entries.Count > 0)
+            {
+                AppLogEntry tail = Entries[^1];
+                if (tail.Level == level &&
+                    string.Equals(tail.Source, cleanSource, StringComparison.Ordinal) &&
+                    string.Equals(tail.Message, cleanMessage, StringComparison.Ordinal) &&
+                    string.Equals(tail.Detail, cleanDetail, StringComparison.Ordinal) &&
+                    (now - tail.Timestamp) <= DeduplicationWindow)
+                {
+                    entry = tail with { Timestamp = now, RepeatCount = tail.RepeatCount + 1 };
+                    Entries[^1] = entry;
+                    shouldWriteToDisk = entry.RepeatCount % 10 == 0;
+                    goto PersistAndEmit;
+                }
+            }
+
+            entry = new AppLogEntry(now, level, cleanSource, cleanMessage, cleanDetail, effectiveCorr, 1);
+            Entries.Add(entry);
+            if (Entries.Count > MaxMemoryEntries)
+            {
+                Entries.RemoveRange(0, Entries.Count - MaxMemoryEntries);
+            }
+
+        PersistAndEmit:
+            if (shouldWriteToDisk)
+            {
+                WriteToFileLocked(entry);
+            }
         }
 
-        WriteToFile(entry);
         EntryLogged?.Invoke(null, entry);
     }
 
     public static IReadOnlyList<AppLogEntry> GetEntries()
-        => [.. Entries.Reverse()];
+    {
+        lock (SyncLock)
+        {
+            var snapshot = new List<AppLogEntry>(Entries.Count);
+            for (int i = Entries.Count - 1; i >= 0; i--)
+            {
+                snapshot.Add(Entries[i]);
+            }
+            return snapshot;
+        }
+    }
 
     public static void ClearMemory()
     {
-        while (Entries.TryDequeue(out _))
+        lock (SyncLock)
         {
+            Entries.Clear();
         }
     }
 
     public static void ExportToFile(string filePath, AppLogLevel? minLevel = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
-        IEnumerable<AppLogEntry> items = Entries.ToArray();
-        if (minLevel.HasValue)
+        List<AppLogEntry> items;
+        lock (SyncLock)
         {
-            items = items.Where(e => e.Level == minLevel.Value);
+            items = minLevel.HasValue ? Entries.Where(e => e.Level == minLevel.Value).ToList() : [.. Entries];
         }
 
         var sb = new StringBuilder();
@@ -117,30 +213,115 @@ public static class AppLogger
         File.WriteAllText(filePath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
     }
 
+    public static int PruneExpiredLogs(string? directory = null)
+    {
+        string targetDir = string.IsNullOrWhiteSpace(directory) ? LogDirectory : directory;
+        if (!Directory.Exists(targetDir))
+        {
+            return 0;
+        }
+        int retention = Math.Clamp(RetentionDays, 1, 365);
+        DateTime cutoff = DateTime.Today.AddDays(-retention);
+        int deleted = 0;
+        try
+        {
+            foreach (string file in Directory.EnumerateFiles(targetDir, "pesaje_*.log"))
+            {
+                if (File.GetLastWriteTime(file) < cutoff)
+                {
+                    File.Delete(file);
+                    deleted++;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LastWriteWarning = SanitizeText($"No se pudieron depurar logs antiguos: {ex.Message}");
+        }
+        return deleted;
+    }
+
     private static string FormatEntry(AppLogEntry e)
     {
+        string corr = string.IsNullOrWhiteSpace(e.CorrelationId) ? "-" : e.CorrelationId;
+        string rep = e.RepeatCount > 1 ? $" (x{e.RepeatCount})" : string.Empty;
         string baseLine = string.Create(CultureInfo.InvariantCulture,
-            $"[{e.Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{e.Level,-6}] [{e.Source}] {e.Message}");
+            $"[{e.Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{e.Level,-8}] [{corr}] [{e.Source}] {e.Message}{rep}");
         return string.IsNullOrWhiteSpace(e.Detail)
             ? baseLine
             : $"{baseLine}{Environment.NewLine}    {e.Detail.Replace(Environment.NewLine, Environment.NewLine + "    ", StringComparison.Ordinal)}";
     }
 
-    private static void WriteToFile(AppLogEntry entry)
+    private static void WriteToFileLocked(AppLogEntry entry)
     {
         try
         {
-            lock (SyncLock)
+            string dir = LogDirectory;
+            Directory.CreateDirectory(dir);
+            if (_lastRetentionCheckDate != DateTime.Today)
             {
-                Directory.CreateDirectory(LogDirectory);
-                File.AppendAllText(CurrentLogFilePath, FormatEntry(entry) + Environment.NewLine, Encoding.UTF8);
+                _lastRetentionCheckDate = DateTime.Today;
+                PruneExpiredLogs(dir);
             }
+
+            string filePath = CurrentLogFilePath;
+            RotateFileIfNeeded(filePath);
+            File.AppendAllText(filePath, FormatEntry(entry) + Environment.NewLine, Encoding.UTF8);
+            LastWriteWarning = null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Evitar recursión infinita si el sistema de archivos impide escribir en el directorio actual
+            LastWriteWarning = SanitizeText($"Fallo escritura en LogDirectory: {ex.Message}");
+            TryWriteFallbackTempLog(entry);
         }
     }
+
+    private static void RotateFileIfNeeded(string filePath)
+    {
+        long maxBytes = Math.Max(512L, MaxFileSizeBytes);
+        if (!File.Exists(filePath))
+        {
+            return;
+        }
+        var info = new FileInfo(filePath);
+        if (info.Length < maxBytes)
+        {
+            return;
+        }
+
+        string dir = Path.GetDirectoryName(filePath) ?? LogDirectory;
+        string baseName = Path.GetFileNameWithoutExtension(filePath);
+        for (int idx = 1; idx <= 999; idx++)
+        {
+            string candidate = Path.Combine(dir, $"{baseName}_{idx:D3}.log");
+            if (!File.Exists(candidate))
+            {
+                File.Move(filePath, candidate);
+                return;
+            }
+        }
+    }
+
+    private static void TryWriteFallbackTempLog(AppLogEntry entry)
+    {
+        try
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "PesajeProCamion", "Logs");
+            Directory.CreateDirectory(tempDir);
+            string tempPath = Path.Combine(tempDir, $"pesaje_fallback_{DateTime.Today:yyyyMMdd}.log");
+            File.AppendAllText(tempPath, FormatEntry(entry) + Environment.NewLine, Encoding.UTF8);
+        }
+        catch (Exception fallbackEx) when (fallbackEx is IOException or UnauthorizedAccessException)
+        {
+            LastWriteWarning = SanitizeText($"Log primary y fallback inaccesibles: {fallbackEx.Message}");
+        }
+    }
+
+    [GeneratedRegex(@"(?i)(Password|PWD|Clave|Pass_word)\s*=\s*[^;\r\n""']+")]
+    private static partial Regex CredentialPairRegex();
+
+    [GeneratedRegex(@"(?i)(Bearer\s+[A-Za-z0-9._\-]+|ghp_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,})")]
+    private static partial Regex TokenRegex();
 
     private static string ResolveDefaultLogDirectory()
     {

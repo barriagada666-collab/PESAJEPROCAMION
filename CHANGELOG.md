@@ -1,5 +1,23 @@
 # Historial de Cambios (CHANGELOG)
 
+## [2.4.0] - 2026-11-27
+### Optimizado, Endurecido y Corregido
+- **Eliminación de Fugas de Memoria, GDI y Suscripciones WinForms**:
+  - Agregada desuscripción garantizada en `Dispose(bool)` para `VisorSetupForm` y `PesajeMopForm` (frente al singleton `ScaleReaderService.ReadingReceived`), eliminando retención de formularios completos y handles GDI en aperturas/cierres repetidos.
+  - Centralizadas fuentes compartidas (`AppTheme.FontSmall`, `FontSmallBold`, `FontBodyBoldLarge`, `FontChartTitle`, `FontInput`, `FontKpiTitle`, `FontKpiSub`, `FontKpiValue`) y singleton `SharedFormIcon` en `AppTheme`, eliminando fugas de objetos `Font`/`Icon` por refresco de grilla y eventos `Paint` (`GestionPesajesControl`, `ReportsWorkspaceControl`, `TicketViewerDialog`, `ErrorLogViewerDialog`, `CatalogCrudBaseForm`).
+  - Ciclo de vida determinístico de `ContextMenuStrip` (`UniversalContextMenuService.ReplaceContextMenu`) y desuscripción segura en `ErrorLogViewerDialog.Dispose`.
+- **Rendimiento de Consultas y Asignaciones (`MopRepository`, `ScaleReaderService`)**:
+  - Eliminado patrón N+1 en `MopRepository.GetPesajesMopAsync`: reemplazada lectura detalle fila a fila por una sola consulta batch con `INNER JOIN` sobre `DBMOPDETPJES`.
+  - Uso de `ArrayPool<byte>.Shared` en lectura serial RS-232 (`ScaleReaderService.OnSerialDataReceived`) y registro explícito CodePages `1252` en `TicketPrinterService.SendRawTextToPrinter`.
+- **Sistema Centralizado de Logs, Sanitización y Manejo de Errores (`AppLogger`, `Program`, `AppTheme`)**:
+  - Agregados niveles `Debug` y `Critical`, `NewCorrelationId()` (`OP-...`), sanitización automática de secretos/credenciales (`Password=`, `PWD=`, `Bearer`, `ghp_`), deduplicación de errores repetidos (`RepeatCount`), rotación por tamaño (`5 MB` por defecto) y depuración por retención (`30` días), con fallback seguro a `%TEMP%` y registro no recursivo en `LastWriteWarning`.
+  - Diálogos de error amigables con código de correlación sin exposición de credenciales ni trazas sensibles; `CatalogCrudBaseForm` protegido con `AppTheme.SafeLoadAsync`.
+- **Resiliencia Firebird (`DatabaseSettings`, `DatabaseSessionFactory`, `WeighingRepository`, `CatalogRepository`)**:
+  - Soporte configurable de `CommandTimeout` (rango `[5..300]s`, defecto `30s`) aplicado mediante `DatabaseSessionFactory.CreateCommand` y persistido en `appsettings.json` (`AppConfigStore`).
+  - Rollback transaccional seguro con `CancellationToken.None` y registro aislado sin enmascarar la excepción original.
+- **Cobertura de Pruebas Automatizadas**:
+  - Nuevas pruebas para rotación, retención, deduplicación, sanitización de secretos, `CommandTimeout`, benchmark analítico/exportación de `5,000` tickets y verificación de fugas GDI/heap en ciclos repetidos de UI.
+
 ## [2.3.0] - 2026-11-27
 ### Agregado y Estandarizado
 - **Checkbox de Visibilidad para `Estado` y `Cantidad de Fardos` (`TicketViewerDialog`, `AppConfigStore`, `TicketFieldVisibility`)**:

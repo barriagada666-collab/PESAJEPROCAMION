@@ -194,7 +194,7 @@ public static class UniversalContextMenuService
             currentUserProvider: currentUserProvider,
             selectionProvider: () => grid.CurrentRow is not null ? (grid.CurrentRow.Tag ?? grid.CurrentRow) : null,
             actions: specs);
-        grid.ContextMenuStrip = cms;
+        ReplaceContextMenu(grid, cms);
         return cms;
     }
 
@@ -209,8 +209,24 @@ public static class UniversalContextMenuService
         ArgumentNullException.ThrowIfNull(actions);
 
         ContextMenuStrip cms = BuildMenu(surface, currentUserProvider, contextProvider ?? (() => surface), actions);
-        surface.ContextMenuStrip = cms;
+        ReplaceContextMenu(surface, cms);
         return cms;
+    }
+
+    private static void ReplaceContextMenu(Control owner, ContextMenuStrip cms)
+    {
+        if (owner.ContextMenuStrip is { } previous && !ReferenceEquals(previous, cms) && !previous.IsDisposed)
+        {
+            previous.Dispose();
+        }
+        owner.ContextMenuStrip = cms;
+        owner.Disposed += (_, _) =>
+        {
+            if (!cms.IsDisposed)
+            {
+                cms.Dispose();
+            }
+        };
     }
 
     public static ContextMenuStrip BuildMenu(

@@ -27,13 +27,13 @@ public sealed class ErrorLogViewerDialog : Form
         BuildUi();
         Load += (_, _) => ReloadGrid();
         AppLogger.EntryLogged += OnLiveEntry;
-        FormClosed += (_, _) => AppLogger.EntryLogged -= OnLiveEntry;
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
+            AppLogger.EntryLogged -= OnLiveEntry;
             _tt.Dispose();
         }
         base.Dispose(disposing);
@@ -64,7 +64,7 @@ public sealed class ErrorLogViewerDialog : Form
             WrapContents = false,
             AutoScroll = true
         };
-        _cmbLevel.Items.AddRange(["Todos", "Error", "Warn", "Sql", "Serial", "Info"]);
+        _cmbLevel.Items.AddRange(["Todos", "Critical", "Error", "Warn", "Sql", "Serial", "Info", "Debug"]);
         _cmbLevel.SelectedIndex = 0;
         _cmbLevel.SelectedIndexChanged += (_, _) => ReloadGrid();
         _cmbLevel.Width = 114;
@@ -157,7 +157,7 @@ public sealed class ErrorLogViewerDialog : Form
             AutoEllipsis = true,
             TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = AppTheme.TextMuted,
-            Font = new Font("Segoe UI", 8.5f),
+            Font = AppTheme.FontSmall,
             Text = $"Archivo actual: {AppLogger.CurrentLogFilePath}"
         };
         var btnFolder = new Button { Dock = DockStyle.Fill };
@@ -201,23 +201,31 @@ public sealed class ErrorLogViewerDialog : Form
             if (!string.IsNullOrEmpty(filter) &&
                 !e.Source.Contains(filter, StringComparison.OrdinalIgnoreCase) &&
                 !e.Message.Contains(filter, StringComparison.OrdinalIgnoreCase) &&
+                !(e.CorrelationId?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false) &&
                 !(e.Detail?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false))
             {
                 continue;
             }
 
+            string repeatPrefix = e.RepeatCount > 1 ? $"[x{e.RepeatCount}] " : string.Empty;
             int idx = _grid.Rows.Add(
                 e.Timestamp.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
                 e.Level.ToString().ToUpperInvariant(),
                 e.Source,
-                e.Message);
+                repeatPrefix + e.Message);
             _grid.Rows[idx].Tag = e;
             _grid.Rows[idx].DefaultCellStyle.ForeColor = e.Level switch
             {
+                AppLogLevel.Critical => AppTheme.AccentDanger,
                 AppLogLevel.Error => AppTheme.AccentDanger,
                 AppLogLevel.Warn => AppTheme.AccentAmber,
+                AppLogLevel.Debug => AppTheme.TextMuted,
                 _ => AppTheme.TextPrimary
             };
+            if (e.Level == AppLogLevel.Critical)
+            {
+                _grid.Rows[idx].DefaultCellStyle.Font = AppTheme.FontBodyBold;
+            }
         }
         ShowSelectedDetail();
     }
@@ -226,7 +234,9 @@ public sealed class ErrorLogViewerDialog : Form
     {
         if (_grid.CurrentRow?.Tag is AppLogEntry e)
         {
-            _txtDetail.Text = $"[{e.Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{e.Level}] [{e.Source}]\r\n{e.Message}\r\n\r\n{e.Detail}";
+            string corr = string.IsNullOrWhiteSpace(e.CorrelationId) ? "-" : e.CorrelationId;
+            string rep = e.RepeatCount > 1 ? $" | Repeticiones: {e.RepeatCount}" : string.Empty;
+            _txtDetail.Text = $"[{e.Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{e.Level}] [{e.Source}] [Ref: {corr}{rep}]\r\n{e.Message}\r\n\r\n{e.Detail}";
         }
         else
         {

@@ -34,11 +34,25 @@ public static class AppTheme
     public static readonly Color LcdDigitOn = Color.FromArgb(56, 239, 155);
     public static readonly Color LcdDigitOff = Color.FromArgb(20, 48, 68);
 
+    public static readonly Font FontKpiTitle = new("Segoe UI", 7.75f, FontStyle.Bold);
+    public static readonly Font FontKpiSub = new("Segoe UI", 7.75f, FontStyle.Regular);
+    public static readonly Font FontKpiValue = new("Segoe UI", 12f, FontStyle.Bold);
+    public static readonly Font FontSmall = new("Segoe UI", 8.5f, FontStyle.Regular);
+    public static readonly Font FontSmallBold = new("Segoe UI", 8.5f, FontStyle.Bold);
     public static readonly Font FontBody = new("Segoe UI", 9.25f, FontStyle.Regular);
     public static readonly Font FontBodyBold = new("Segoe UI", 9.25f, FontStyle.Bold);
+    public static readonly Font FontBodyBoldLarge = new("Segoe UI", 9.75f, FontStyle.Bold);
+    public static readonly Font FontInput = new("Segoe UI", 9.5f, FontStyle.Regular);
+    public static readonly Font FontChartTitle = new("Segoe UI", 10f, FontStyle.Bold);
     public static readonly Font FontButton = new("Segoe UI", 9f, FontStyle.Bold);
     public static readonly Font FontTitle = new("Segoe UI", 13.5f, FontStyle.Bold);
     public static readonly Font FontMono = new("Consolas", 9.25f, FontStyle.Regular);
+
+    private static readonly Lazy<Icon?> SharedFormIcon = new(() =>
+    {
+        string icoPath = Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
+        return File.Exists(icoPath) ? new Icon(icoPath) : null;
+    });
 
     public static void StylePrimaryButton(Button btn, AppIcon icon, string text, string tooltip, ToolTip? tt = null)
     {
@@ -160,10 +174,15 @@ public static class AppTheme
         }
         catch (Exception ex)
         {
-            Domain.Diagnostics.AppLogger.Error(source, $"Error cargando vista: {ex.Message}", ex);
+            string corrId = Domain.Diagnostics.AppLogger.ErrorCorrelated(source, $"Error cargando vista: {ex.Message}", ex);
             if (!owner.IsDisposed && !owner.Disposing && owner.IsHandleCreated && owner.Visible && !Domain.Diagnostics.AppLogger.IsSilentTestHost)
             {
-                MessageBox.Show(owner, $"No se pudo cargar datos de {source}:\r\n{ex.Message}", source, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(
+                    owner,
+                    $"No se pudo completar '{source}'.\r\n{Domain.Diagnostics.AppLogger.SanitizeText(ex.Message)}\r\n\r\nReferencia de log: {corrId}",
+                    source,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
             }
         }
     }
@@ -187,10 +206,9 @@ public static class AppTheme
     public static void ApplyFormIcon(Form form)
     {
         ArgumentNullException.ThrowIfNull(form);
-        string icoPath = Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
-        if (File.Exists(icoPath))
+        if (SharedFormIcon.Value is { } icon)
         {
-            form.Icon = new Icon(icoPath);
+            form.Icon = icon;
         }
     }
 

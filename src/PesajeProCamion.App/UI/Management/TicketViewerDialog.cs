@@ -398,7 +398,7 @@ public sealed class TicketViewerDialog : Form
             Text = label,
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft,
-            Font = new Font("Segoe UI", 8.25f, FontStyle.Bold),
+            Font = AppTheme.FontSmallBold,
             ForeColor = AppTheme.TextPrimary
         }, 0, row);
         if (ctl is ComboBox)

@@ -56,6 +56,7 @@ public sealed class AppConfigStore
                         Charset = string.IsNullOrWhiteSpace(cfg.Charset) ? "UTF8" : cfg.Charset,
                         Dialect = cfg.Dialect is 1 or 3 ? cfg.Dialect : 3,
                         ConnectionTimeout = cfg.ConnectionTimeout > 0 ? cfg.ConnectionTimeout : 10,
+                        CommandTimeout = cfg.CommandTimeout > 0 ? cfg.CommandTimeout : 30,
                         RawNetworkPath = cfg.RawNetworkPath,
                         ServerType = FbServerType.Default
                     };
@@ -82,6 +83,7 @@ public sealed class AppConfigStore
         current.Charset = settings.Charset;
         current.Dialect = settings.Dialect;
         current.ConnectionTimeout = settings.ConnectionTimeout;
+        current.CommandTimeout = settings.CommandTimeout;
         current.RawNetworkPath = settings.RawNetworkPath;
         SaveStoredConfig(current);
     }
@@ -180,6 +182,7 @@ public sealed class AppConfigStore
         public string Charset { get; set; } = "UTF8";
         public int Dialect { get; set; } = 3;
         public int ConnectionTimeout { get; set; } = 10;
+        public int CommandTimeout { get; set; } = 30;
         public string? RawNetworkPath { get; set; }
         public TicketFieldVisibility? TicketFields { get; set; }
     }

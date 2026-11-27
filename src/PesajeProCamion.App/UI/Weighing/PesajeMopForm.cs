@@ -76,6 +76,16 @@ public sealed class PesajeMopForm : Form
         };
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _services.Scale.ReadingReceived -= OnReadingReceived;
+            _services.Scale.StopDemo();
+        }
+        base.Dispose(disposing);
+    }
+
     public int FolioPesajeAsociado { get; }
     public PesajeMop? ResultadoGuardado { get; private set; }
 

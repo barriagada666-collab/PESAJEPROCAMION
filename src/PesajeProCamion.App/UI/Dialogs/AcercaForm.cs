@@ -35,7 +35,7 @@ public sealed class AcercaForm : Form
 
         var title = new Label
         {
-            Text = "PesajeProCamion — v2.3.0",
+            Text = "PesajeProCamion — v2.4.0",
             Location = new Point(136, 18),
             AutoSize = true,
             ForeColor = Color.White,
