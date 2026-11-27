@@ -49,6 +49,9 @@ public sealed class PesajeWorkspaceControl : UserControl
     private readonly TextBox _txtChoferNombre = new() { ReadOnly = true };
     private readonly TextBox _txtGuia = new() { MaxLength = 50, CharacterCasing = CharacterCasing.Upper };
     private readonly NumericUpDown _numNetoInf = new() { Maximum = 200_000, ThousandsSeparator = true };
+    private readonly NumericUpDown _numFardos = new() { Minimum = 0, Maximum = 999_999, ThousandsSeparator = true };
+    private readonly CheckBox _chkMostrarFardos = new();
+    private readonly Label _lblFardosField = new();
     private readonly NumericUpDown _numTipoMop = new() { Maximum = 9999 };
     private readonly NumericUpDown _numLargo = new() { Maximum = 90 };
     private readonly TextBox _txtObs = new() { MaxLength = 120 };
@@ -61,6 +64,7 @@ public sealed class PesajeWorkspaceControl : UserControl
     private readonly Label _lblIngresoInfo = new();
     private readonly Label _lblMsg = new();
     private readonly DataGridView _gridTransito = new();
+    private DataGridViewTextBoxColumn? _colTransitoFardos;
 
     private readonly Button _btnPesarCamion = new();
     private readonly Button _btnPesarCarro = new();
@@ -110,17 +114,22 @@ public sealed class PesajeWorkspaceControl : UserControl
         foreach (RegistroTransito t in rows)
         {
             int idx = _gridTransito.Rows.Add(
-                t.FolioPesaje,
-                t.TipoPesaje.ToString(),
+                t.FolioPesaje.ToString("D6", CultureInfo.InvariantCulture),
+                TicketCustomizationHelper.FormatTipoPesajeNombre(t.TipoPesaje),
                 t.Patente,
                 t.FechaIngreso.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
                 t.HoraIngreso,
+                t.Fardos,
                 $"{t.Bruto:N0}",
                 $"{t.Tara:N0}",
                 t.NombreCliente,
                 t.NombreProducto);
             _gridTransito.Rows[idx].Tag = t;
+            _gridTransito.Rows[idx].Cells[0].Style.Font = AppTheme.FontBodyBold;
+            _gridTransito.Rows[idx].Cells[6].Style.Font = AppTheme.FontBodyBold;
+            _gridTransito.Rows[idx].Cells[7].Style.Font = AppTheme.FontBodyBold;
         }
+        ApplyFardosVisibility(_services.TicketFields.MostrarFardos);
         TransitUpdated?.Invoke(this, EventArgs.Empty);
     }
 
@@ -214,9 +223,9 @@ public sealed class PesajeWorkspaceControl : UserControl
             Dock = DockStyle.Fill,
             Orientation = Orientation.Horizontal,
             FixedPanel = FixedPanel.Panel1,
-            Panel1MinSize = 250,
+            Panel1MinSize = 278,
             Panel2MinSize = 90,
-            SplitterDistance = 290,
+            SplitterDistance = 304,
             BackColor = AppTheme.BorderSubtle
         };
         var topContainer = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.BackgroundLight, Padding = new Padding(6, 4, 6, 4), AutoScroll = true };
@@ -224,7 +233,7 @@ public sealed class PesajeWorkspaceControl : UserControl
         var cardsTable = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 280,
+            Height = 292,
             ColumnCount = 2,
             RowCount = 1,
             BackColor = Color.Transparent
@@ -243,13 +252,13 @@ public sealed class PesajeWorkspaceControl : UserControl
             BorderStyle = BorderStyle.FixedSingle
         };
 
-        var leftGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 8 };
+        var leftGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 9 };
         leftGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96f));
         leftGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
         leftGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88f));
         leftGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-        for (int r = 0; r < 6; r++) leftGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 28f));
-        leftGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        for (int r = 0; r < 7; r++) leftGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 27f));
+        leftGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 21f));
         leftGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
         _cmbTipoPesaje.Items.AddRange(["1 - Recepción", "2 - Despacho", "3 - Mov. Interno"]);
@@ -300,17 +309,47 @@ public sealed class PesajeWorkspaceControl : UserControl
         // Row 5: Observación (span 3 cols)
         AddCellLabel(leftGrid, "Observación", 0, 5);
         _txtObs.Dock = DockStyle.Fill;
-        _txtObs.Margin = new Padding(0, 3, 2, 2);
+        _txtObs.Margin = new Padding(0, 2, 2, 2);
         leftGrid.Controls.Add(_txtObs, 1, 5);
         leftGrid.SetColumnSpan(_txtObs, 3);
 
-        // Row 6 & 7: Estado ingreso + mensajes
+        // Row 6: Cantidad de Fardos + Checkbox Mostrar Fardos
+        _lblFardosField.Text = "Cant. Fardos";
+        _lblFardosField.Dock = DockStyle.Fill;
+        _lblFardosField.TextAlign = ContentAlignment.MiddleLeft;
+        _lblFardosField.Font = AppTheme.FontBodyBold;
+        _lblFardosField.ForeColor = AppTheme.TextPrimary;
+        leftGrid.Controls.Add(_lblFardosField, 0, 6);
+
+        var fardosRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 1, 4, 1) };
+        fardosRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118f));
+        fardosRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        fardosRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        _numFardos.Dock = DockStyle.Fill;
+        _numFardos.Margin = new Padding(0, 1, 8, 1);
+        _chkMostrarFardos.Text = "Mostrar Fardos";
+        _chkMostrarFardos.Dock = DockStyle.Fill;
+        _chkMostrarFardos.Font = AppTheme.FontBodyBold;
+        _chkMostrarFardos.Checked = _services.TicketFields.MostrarFardos;
+        _tt.SetToolTip(_chkMostrarFardos, "Muestra u oculta Cantidad de Fardos en formularios y tickets sin alterar el valor en BD.");
+        _chkMostrarFardos.CheckedChanged += (_, _) =>
+        {
+            _services.TicketFields.MostrarFardos = _chkMostrarFardos.Checked;
+            AppConfigStore.SaveTicketFields(_services.TicketFields);
+            ApplyFardosVisibility(_chkMostrarFardos.Checked);
+        };
+        fardosRow.Controls.Add(_numFardos, 0, 0);
+        fardosRow.Controls.Add(_chkMostrarFardos, 1, 0);
+        leftGrid.Controls.Add(fardosRow, 1, 6);
+        leftGrid.SetColumnSpan(fardosRow, 3);
+
+        // Row 7 & 8: Estado ingreso + mensajes
         _lblIngresoInfo.Dock = DockStyle.Fill;
         _lblIngresoInfo.Font = AppTheme.FontBodyBold;
         _lblIngresoInfo.ForeColor = AppTheme.NavyPrimary;
         _lblIngresoInfo.AutoEllipsis = true;
         _lblIngresoInfo.Text = "Ingreso: Pendiente de primer pesaje.";
-        leftGrid.Controls.Add(_lblIngresoInfo, 0, 6);
+        leftGrid.Controls.Add(_lblIngresoInfo, 0, 7);
         leftGrid.SetColumnSpan(_lblIngresoInfo, 4);
 
         _lblMsg.Dock = DockStyle.Fill;
@@ -318,7 +357,7 @@ public sealed class PesajeWorkspaceControl : UserControl
         _lblMsg.ForeColor = AppTheme.NavyDark;
         _lblMsg.AutoEllipsis = true;
         _lblMsg.Text = "Formulario listo. Ingrese patente o seleccione un camión en tránsito.";
-        leftGrid.Controls.Add(_lblMsg, 0, 7);
+        leftGrid.Controls.Add(_lblMsg, 0, 8);
         leftGrid.SetColumnSpan(_lblMsg, 4);
 
         // Autoresolución al salir de códigos digitados manualmente
@@ -343,7 +382,7 @@ public sealed class PesajeWorkspaceControl : UserControl
         var rightLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4 };
         rightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62f));
         rightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38f));
-        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 118f));
+        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 130f));
         rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38f));
         rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
         rightLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
@@ -352,19 +391,19 @@ public sealed class PesajeWorkspaceControl : UserControl
         {
             Dock = DockStyle.Fill,
             BackColor = AppTheme.NavyDark,
-            Padding = new Padding(8, 6, 8, 6),
+            Padding = new Padding(8, 5, 8, 5),
             Margin = new Padding(0, 0, 6, 6),
             ColumnCount = 2,
             RowCount = 3
         };
         weightsBand.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68f));
         weightsBand.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        weightsBand.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33f));
-        weightsBand.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33f));
-        weightsBand.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33f));
-        AddWeightRow(weightsBand, 0, "BRUTO", _numBruto);
-        AddWeightRow(weightsBand, 1, "TARA", _numTara);
-        AddWeightRow(weightsBand, 2, "NETO", _numNeto);
+        weightsBand.RowStyles.Add(new RowStyle(SizeType.Percent, 30f));
+        weightsBand.RowStyles.Add(new RowStyle(SizeType.Percent, 30f));
+        weightsBand.RowStyles.Add(new RowStyle(SizeType.Percent, 40f));
+        AddWeightRow(weightsBand, 0, "BRUTO", _numBruto, isNeto: false);
+        AddWeightRow(weightsBand, 1, "TARA", _numTara, isNeto: false);
+        AddWeightRow(weightsBand, 2, "NETO", _numNeto, isNeto: true);
 
         _lblTaraRef.Dock = DockStyle.Fill;
         _lblTaraRef.Margin = new Padding(0, 0, 0, 6);
@@ -434,16 +473,18 @@ public sealed class PesajeWorkspaceControl : UserControl
         };
         AppTheme.StyleDataGrid(_gridTransito);
         _gridTransito.Dock = DockStyle.Fill;
+        _colTransitoFardos = new DataGridViewTextBoxColumn { Name = "colTransitoFardos", HeaderText = "Fardos", FillWeight = 56, Visible = _services.TicketFields.MostrarFardos };
         _gridTransito.Columns.AddRange([
-            new DataGridViewTextBoxColumn { HeaderText = "Folio", FillWeight = 60 },
-            new DataGridViewTextBoxColumn { HeaderText = "Tipo", FillWeight = 80 },
-            new DataGridViewTextBoxColumn { HeaderText = "Patente", FillWeight = 75 },
-            new DataGridViewTextBoxColumn { HeaderText = "Fecha Ing.", FillWeight = 80 },
-            new DataGridViewTextBoxColumn { HeaderText = "Hora Ing.", FillWeight = 65 },
-            new DataGridViewTextBoxColumn { HeaderText = "Bruto (kg)", FillWeight = 80 },
-            new DataGridViewTextBoxColumn { HeaderText = "Tara (kg)", FillWeight = 80 },
-            new DataGridViewTextBoxColumn { HeaderText = "Cliente", FillWeight = 160 },
-            new DataGridViewTextBoxColumn { HeaderText = "Producto", FillWeight = 140 }
+            new DataGridViewTextBoxColumn { HeaderText = "N° Folio", FillWeight = 64 },
+            new DataGridViewTextBoxColumn { HeaderText = "Tipo de Pesaje", FillWeight = 112 },
+            new DataGridViewTextBoxColumn { HeaderText = "Patente", FillWeight = 72 },
+            new DataGridViewTextBoxColumn { HeaderText = "Fecha Ing.", FillWeight = 78 },
+            new DataGridViewTextBoxColumn { HeaderText = "Hora Ing.", FillWeight = 62 },
+            _colTransitoFardos,
+            new DataGridViewTextBoxColumn { HeaderText = "Bruto (kg)", FillWeight = 78 },
+            new DataGridViewTextBoxColumn { HeaderText = "Tara (kg)", FillWeight = 78 },
+            new DataGridViewTextBoxColumn { HeaderText = "Cliente", FillWeight = 150 },
+            new DataGridViewTextBoxColumn { HeaderText = "Producto", FillWeight = 135 }
         ]);
         _gridTransito.CellDoubleClick += (_, e) =>
         {
@@ -452,76 +493,169 @@ public sealed class PesajeWorkspaceControl : UserControl
                 LoadFromTransito(tr);
             }
         };
-        _gridTransito.CellMouseDown += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Right && e.RowIndex >= 0)
-            {
-                _gridTransito.ClearSelection();
-                _gridTransito.Rows[e.RowIndex].Selected = true;
-                _gridTransito.CurrentCell = _gridTransito.Rows[e.RowIndex].Cells[0];
-            }
-        };
-        _gridTransito.ContextMenuStrip = BuildTransitContextMenu();
+        AttachWorkspaceContextMenus(leftCard, rightCard);
         transitWrapper.Controls.AddRange([_gridTransito, transitTitle]);
 
         split.Panel1.Controls.Add(topContainer);
         split.Panel2.Controls.Add(transitWrapper);
 
         Controls.AddRange([split, toolbar, header]);
+        ApplyFardosVisibility(_services.TicketFields.MostrarFardos);
     }
 
-    private ContextMenuStrip BuildTransitContextMenu()
+    private void ApplyFardosVisibility(bool visible)
     {
-        var cms = new ContextMenuStrip();
-        AppTheme.StyleContextMenu(cms);
-
-        var mLoad = new ToolStripMenuItem("Cargar en Báscula (2° Pesaje)", IconCatalog.Get(AppIcon.Scale, 16, AppTheme.AccentEmerald));
-        mLoad.Click += (_, _) => { if (_gridTransito.CurrentRow?.Tag is RegistroTransito tr) LoadFromTransito(tr); };
-
-        var mView = new ToolStripMenuItem("Visualizar Ticket En Proceso...", IconCatalog.Get(AppIcon.ViewTicket, 16, AppTheme.NavyPrimary));
-        mView.Click += async (_, _) =>
+        _lblFardosField.Visible = visible;
+        _numFardos.Visible = visible;
+        if (_colTransitoFardos is not null)
         {
-            if (_gridTransito.CurrentRow?.Tag is RegistroTransito tr)
-            {
-                using var dlg = new TicketViewerDialog(_services, TicketEditorDialog.ToPesajeView(tr), isEnProceso: true);
-                if (dlg.ShowDialog(this) == DialogResult.OK || dlg.Modified) await RefreshTransitoAsync();
-            }
-        };
+            _colTransitoFardos.Visible = visible;
+        }
+    }
 
-        var mEdit = new ToolStripMenuItem("Modificar Datos En Proceso...", IconCatalog.Get(AppIcon.EditTicket, 16, AppTheme.NavyDark));
-        mEdit.Click += async (_, _) =>
-        {
-            if (_gridTransito.CurrentRow?.Tag is RegistroTransito tr)
-            {
-                if (!PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ModificarRegistro))
+    private void AttachWorkspaceContextMenus(Control leftCard, Control rightCard)
+    {
+        UniversalContextMenuService.AttachToGrid(
+            _gridTransito,
+            () => _services.UsuarioActual,
+            customActions:
+            [
+                new ContextActionSpec
                 {
-                    MessageBox.Show(this, "No está autorizado para modificar registros.", "Permisos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
+                    Text = "Cargar en Báscula (2° Pesaje)",
+                    Icon = AppIcon.Scale,
+                    IconTint = AppTheme.AccentEmerald,
+                    Group = 10,
+                    RequiresRow = true,
+                    IsVisible = sel => sel is RegistroTransito,
+                    ExecuteAsync = sel => { if (sel is RegistroTransito tr) LoadFromTransito(tr); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Visualizar Ticket En Proceso...",
+                    Icon = AppIcon.ViewTicket,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 10,
+                    RequiresRow = true,
+                    IsVisible = sel => sel is RegistroTransito,
+                    ExecuteAsync = async sel =>
+                    {
+                        if (sel is RegistroTransito tr)
+                        {
+                            using var dlg = new TicketViewerDialog(_services, TicketEditorDialog.ToPesajeView(tr), isEnProceso: true);
+                            if (dlg.ShowDialog(this) == DialogResult.OK || dlg.Modified) await RefreshTransitoAsync();
+                        }
+                    }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Modificar Datos En Proceso...",
+                    Icon = AppIcon.EditTicket,
+                    IconTint = AppTheme.NavyDark,
+                    Group = 10,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.ModificarRegistro,
+                    IsVisible = sel => sel is RegistroTransito,
+                    ExecuteAsync = async sel =>
+                    {
+                        if (sel is RegistroTransito tr)
+                        {
+                            using var dlg = new TicketEditorDialog(_services, TicketEditorMode.EditInProcess, TicketEditorDialog.ToPesajeView(tr));
+                            if (dlg.ShowDialog(this) == DialogResult.OK) await RefreshTransitoAsync();
+                        }
+                    }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Anular / Eliminar de Tránsito...",
+                    Icon = AppIcon.Delete,
+                    IconTint = AppTheme.AccentDanger,
+                    Group = 20,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.EliminarRegistro,
+                    IsVisible = sel => sel is RegistroTransito,
+                    ExecuteAsync = async _ => await DeleteSelectedTransitAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Copiar Patente",
+                    Icon = AppIcon.Copy,
+                    IconTint = AppTheme.TextPrimary,
+                    Group = 30,
+                    RequiresRow = true,
+                    IsVisible = sel => sel is RegistroTransito tr && !string.IsNullOrWhiteSpace(tr.Patente),
+                    ExecuteAsync = sel => { if (sel is RegistroTransito tr) Clipboard.SetText(tr.Patente); return Task.CompletedTask; }
                 }
-                using var dlg = new TicketEditorDialog(_services, TicketEditorMode.EditInProcess, TicketEditorDialog.ToPesajeView(tr));
-                if (dlg.ShowDialog(this) == DialogResult.OK) await RefreshTransitoAsync();
+            ],
+            exportTitle: "CAMIONES PENDIENTES EN PLANTA (EN TRÁNSITO)",
+            exportSubtitleProvider: () => $"Báscula: {_services.BasculaActual.NombreEmpresa} | En tránsito: {_gridTransito.Rows.Count}",
+            sheetName: "Transito_Planta",
+            refreshAsync: RefreshTransitoAsync);
+
+        ContextActionSpec[] workspaceActions =
+        [
+            new ContextActionSpec
+            {
+                Text = "Grabar Pesaje Actual",
+                Icon = AppIcon.Save,
+                IconTint = AppTheme.AccentEmerald,
+                Group = 10,
+                RequiredPermission = AccionAutorizacion.AgregarRegistro,
+                ExecuteAsync = _ => SaveWeighingAsync()
+            },
+            new ContextActionSpec
+            {
+                Text = "Aplicar Tara Registrada del Camión",
+                Icon = AppIcon.Tare,
+                IconTint = AppTheme.AccentAmber,
+                Group = 10,
+                IsVisible = _ => _camionActual is not null,
+                ExecuteAsync = _ => { ApplyRegisteredTare(); return Task.CompletedTask; }
+            },
+            new ContextActionSpec
+            {
+                Text = "Crear Ticket Manual...",
+                Icon = AppIcon.Add,
+                IconTint = AppTheme.AccentEmerald,
+                Group = 20,
+                RequiredPermission = AccionAutorizacion.AgregarRegistro,
+                ExecuteAsync = _ => CreateManualTicketAsync()
+            },
+            new ContextActionSpec
+            {
+                Text = "Visualizar / Reimprimir Folio...",
+                Icon = AppIcon.ViewTicket,
+                IconTint = AppTheme.NavyPrimary,
+                Group = 20,
+                ExecuteAsync = _ => ReimprimirPorFolioAsync()
+            },
+            new ContextActionSpec
+            {
+                Text = "Configurar Visor RS-232...",
+                Icon = AppIcon.SerialPort,
+                IconTint = AppTheme.NavyPrimary,
+                Group = 30,
+                ExecuteAsync = _ => { OpenVisorDialog(); return Task.CompletedTask; }
+            },
+            new ContextActionSpec
+            {
+                Text = "Limpiar / Cancelar Formulario",
+                Icon = AppIcon.Cancel,
+                IconTint = AppTheme.AccentDanger,
+                Group = 40,
+                ExecuteAsync = _ => { ClearForm(); return Task.CompletedTask; }
+            },
+            new ContextActionSpec
+            {
+                Text = "Actualizar Tránsito",
+                Icon = AppIcon.Refresh,
+                IconTint = AppTheme.NavyPrimary,
+                Group = 50,
+                ExecuteAsync = _ => RefreshTransitoAsync()
             }
-        };
-
-        var mAnul = new ToolStripMenuItem("Anular / Eliminar de Tránsito...", IconCatalog.Get(AppIcon.Delete, 16, AppTheme.AccentDanger));
-        mAnul.Click += async (_, _) => await DeleteSelectedTransitAsync();
-
-        var mCopyPat = new ToolStripMenuItem("Copiar Patente", IconCatalog.Get(AppIcon.Copy, 16, AppTheme.TextPrimary));
-        mCopyPat.Click += (_, _) => { if (_gridTransito.CurrentRow?.Tag is RegistroTransito tr) Clipboard.SetText(tr.Patente); };
-
-        var mRefresh = new ToolStripMenuItem("Actualizar Tránsito", IconCatalog.Get(AppIcon.Refresh, 16, AppTheme.NavyPrimary));
-        mRefresh.Click += async (_, _) => await RefreshTransitoAsync();
-
-        cms.Opening += (_, _) =>
-        {
-            bool has = _gridTransito.CurrentRow?.Tag is RegistroTransito;
-            mLoad.Enabled = mView.Enabled = mCopyPat.Enabled = has;
-            mEdit.Enabled = has && PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ModificarRegistro);
-            mAnul.Enabled = has && PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.EliminarRegistro);
-        };
-
-        cms.Items.AddRange([mLoad, mView, mEdit, mAnul, new ToolStripSeparator(), mCopyPat, mRefresh]);
-        return cms;
+        ];
+        UniversalContextMenuService.AttachToControl(leftCard, () => _services.UsuarioActual, workspaceActions);
+        UniversalContextMenuService.AttachToControl(rightCard, () => _services.UsuarioActual, workspaceActions);
     }
 
     private static void AddCellLabel(TableLayoutPanel grid, string text, int col, int row)
@@ -585,21 +719,21 @@ public sealed class PesajeWorkspaceControl : UserControl
         return tbl;
     }
 
-    private static void AddWeightRow(TableLayoutPanel tbl, int row, string title, NumericUpDown num)
+    private static void AddWeightRow(TableLayoutPanel tbl, int row, string title, NumericUpDown num, bool isNeto)
     {
         tbl.Controls.Add(new Label
         {
             Text = title,
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = AppTheme.GoldAccent,
-            Font = new Font("Segoe UI", 10f, FontStyle.Bold)
+            ForeColor = isNeto ? AppTheme.GoldSoft : AppTheme.GoldAccent,
+            Font = new Font("Segoe UI", isNeto ? 11f : 9.75f, FontStyle.Bold)
         }, 0, row);
         num.Dock = DockStyle.Fill;
-        num.Margin = new Padding(0, 3, 0, 3);
+        num.Margin = new Padding(0, 2, 0, 2);
         num.BackColor = AppTheme.LcdBackground;
-        num.ForeColor = AppTheme.LcdDigitOn;
-        num.Font = new Font("Consolas", 14.5f, FontStyle.Bold);
+        num.ForeColor = isNeto ? Color.FromArgb(120, 255, 175) : AppTheme.LcdDigitOn;
+        num.Font = new Font("Consolas", isNeto ? 17.5f : 14f, FontStyle.Bold);
         num.TextAlign = HorizontalAlignment.Right;
         tbl.Controls.Add(num, 1, row);
     }
@@ -745,6 +879,7 @@ public sealed class PesajeWorkspaceControl : UserControl
         _txtChoferCod.Text = tr.Chofer;
         _txtGuia.Text = tr.GuiaDespacho;
         _numNetoInf.Value = Math.Clamp(tr.NetoInformado, 0, 200_000);
+        _numFardos.Value = Math.Clamp(tr.Fardos, 0, 999_999);
         _numTipoMop.Value = Math.Clamp((int)tr.TipoMop, 0, 9999);
         _numLargo.Value = Math.Clamp((int)tr.Largo, 0, 90);
         _txtObs.Text = tr.Observacion1;
@@ -753,7 +888,7 @@ public sealed class PesajeWorkspaceControl : UserControl
         RecalculateNet();
 
         _lblIngresoInfo.Text = $"Ingreso Tránsito: {tr.FechaIngreso:dd/MM/yyyy} {tr.HoraIngreso} | Op. ID {tr.UsuarioIngreso}";
-        _lblModoOperacion.Text = $"MODO: SEGUNDO PESAJE (Folio Tránsito #{tr.FolioPesaje})";
+        _lblModoOperacion.Text = $"MODO: SEGUNDO PESAJE ({TicketCustomizationHelper.FormatFolioHeader(tr.FolioPesaje)})";
         _lblMsg.Text = $"Vehículo {tr.Patente} cargado desde tránsito. Capture el segundo peso y presione GRABAR PESAJE.";
         _lblMsg.ForeColor = AppTheme.AccentEmerald;
     }
@@ -843,13 +978,14 @@ public sealed class PesajeWorkspaceControl : UserControl
                     MaxBruto = _maxBrutoMop,
                     Chofer = _txtChoferCod.Text.Trim(),
                     Observacion1 = _txtObs.Text.Trim(),
+                    Fardos = (int)_numFardos.Value,
                     Transportista = _txtTranspCod.Text.Trim(),
                     TipoPesaje = tipo,
                     UsuarioIngreso = userId
                 };
                 int folioTr = await _services.Weighing.RegistrarIngresoTransitoAsync(tr);
                 await RefreshTransitoAsync();
-                MessageBox.Show(this, $"Ingreso a planta registrado en Tránsito con Folio #{folioTr}.", "Primer Pesaje", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, $"Ingreso a planta registrado en Tránsito con {TicketCustomizationHelper.FormatFolioHeader(folioTr)}.", "Primer Pesaje", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 ClearForm();
                 return;
             }
@@ -890,6 +1026,7 @@ public sealed class PesajeWorkspaceControl : UserControl
                 Chofer = _txtChoferCod.Text.Trim(),
                 NombreChofer = _txtChoferNombre.Text.Trim(),
                 Observacion1 = _txtObs.Text.Trim(),
+                Fardos = (int)_numFardos.Value,
                 Transportista = _txtTranspCod.Text.Trim(),
                 NombreTransportista = _txtTranspNombre.Text.Trim(),
                 TaraRegistrada = _chkUsarTaraReg.Checked,
@@ -907,7 +1044,7 @@ public sealed class PesajeWorkspaceControl : UserControl
             if (PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ImprimirTicket))
             {
                 bool showTicket = !_services.ConfigActual.ConfirmarImpresionTicket ||
-                                  MessageBox.Show(this, $"Pesaje #{folioFinal} guardado (Neto: {p.Neto:N0} kg).\r\n¿Desea visualizar / imprimir el ticket?", "Pesaje Completado", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+                                  MessageBox.Show(this, $"Pesaje {TicketCustomizationHelper.FormatFolioHeader(folioFinal)} guardado (Neto: {p.Neto:N0} kg).\r\n¿Desea visualizar / imprimir el ticket?", "Pesaje Completado", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
                 if (showTicket)
                 {
                     using var viewer = new TicketViewerDialog(_services, p, isEnProceso: false);
@@ -916,7 +1053,7 @@ public sealed class PesajeWorkspaceControl : UserControl
             }
             else
             {
-                MessageBox.Show(this, $"Pesaje #{folioFinal} completado. Peso Neto: {p.Neto:N0} kg.", "Pesaje Completado", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, $"Pesaje {TicketCustomizationHelper.FormatFolioHeader(folioFinal)} completado. Peso Neto: {p.Neto:N0} kg.", "Pesaje Completado", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
 
             ClearForm();
@@ -1005,7 +1142,7 @@ public sealed class PesajeWorkspaceControl : UserControl
         _txtProductoCod.Text = _txtProductoNombre.Text = _txtOrigenCod.Text = _txtOrigenNombre.Text = string.Empty;
         _txtDestinoCod.Text = _txtDestinoNombre.Text = _txtTranspCod.Text = _txtTranspNombre.Text = string.Empty;
         _txtChoferCod.Text = _txtChoferNombre.Text = _txtGuia.Text = _txtObs.Text = string.Empty;
-        _numNetoInf.Value = _numTipoMop.Value = _numLargo.Value = _numBruto.Value = _numTara.Value = _numNeto.Value = 0;
+        _numNetoInf.Value = _numFardos.Value = _numTipoMop.Value = _numLargo.Value = _numBruto.Value = _numTara.Value = _numNeto.Value = 0;
         _chkUsarTaraReg.Checked = false;
         _lblTaraRef.Text = "Tara Histórica:\r\n  -\r\nFecha:\r\n  -\r\nHora:\r\n  -";
         _lblIngresoInfo.Text = "Ingreso: Pendiente de primer pesaje.";

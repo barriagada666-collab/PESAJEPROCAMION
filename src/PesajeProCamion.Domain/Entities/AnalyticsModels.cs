@@ -37,7 +37,8 @@ public sealed record ReportKpiSummary(
     string TopPatente,
     string TopCliente,
     string TopProducto,
-    string TopProveedorOrigen);
+    string TopProveedorOrigen,
+    long TotalFardos = 0);
 
 public sealed record SegmentSummaryRow(
     string Clave,
@@ -48,7 +49,8 @@ public sealed record SegmentSummaryRow(
     long TotalNetoKg,
     double ToneladasNetas,
     double PromedioNetoKg,
-    double PorcentajeNeto);
+    double PorcentajeNeto,
+    long TotalFardos = 0);
 
 public sealed record DailyTrendPoint(
     DateTime Fecha,

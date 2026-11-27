@@ -6,23 +6,24 @@ Sistema integral de pesaje de camiones en báscula comercial, control de peso po
 
 ## Descripción del Proyecto
 
-**PesajeProCamion v2.2.1 LTS** unifica y moderniza la operación completa de romana y administración bajo una interfaz corporativa **Petrol Teal + Dorado** 100% responsiva (validada desde `1024x700` hasta `4K`), eliminando dependencias legacy BDE/ODS 9.1, conectándose a bases locales o compartidas en red (`\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`), protegiendo folios contra colisiones e incorporando personalización/edición avanzada de tickets, división de tickets en 2 folios e inteligencia de negocio BI (PDF + Excel `.xlsx`).
+**PesajeProCamion v2.3.0** unifica y moderniza la operación completa de romana y administración bajo una interfaz corporativa **Petrol Teal + Dorado** 100% responsiva (validada desde `1024x700` hasta `4K`), eliminando dependencias legacy BDE/ODS 9.1, conectándose a bases locales o compartidas en red (`\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`), protegiendo folios contra colisiones e incorporando personalización completa de tickets (**Estado**, **Cantidad de Fardos**, **`N° Folio: xxxxxx`**, **`Tipo de Pesaje`** y jerarquía visual **Neto**), división en 2 folios, menús contextuales universales y exportación estandarizada **PDF + Excel `.xlsx` + Impresión**.
 
 ### Características Principales
 - **Visor Personalizable y Editor en Vivo de Tickets (`TicketViewerDialog`)**:
-  - **Checkboxes por campo** para mostrar u ocultar libremente *Patente, Cliente, Producto, Origen/Proveedor, Destino, Transportista, Chofer, Guía de Despacho, Fechas/Operador y Observaciones* (con persistencia en `appsettings.json` aplicada a Vista, Impresión, PDF y Copia de Texto).
-  - **Encabezado destacado de Tipo de Pesaje** (**RECEPCIÓN DE CARGA / DESPACHO DE CARGA / MOVIMIENTO INTERNO**) en la parte superior derecha del ticket y edición en tiempo real del contenido/pesos con guardado directo a Firebird.
-- **CRUD de Tickets sin Conflictos de Folio + Pesos Manuales + División en 2 (`TicketEditorDialog` + `SplitTicketDialog`)**:
-  - Ingreso manual independiente de **Bruto**, **Tara** y **Neto** (con cálculo automático opcional).
-  - **División automática de Tickets en 2 folios** (ej.: dividir Folio `#1` de Neto `10` en Folio `#1` Neto `6` + nuevo Folio `#2` Neto `4`), asignando automáticamente el próximo folio libre sin colisionar con históricos ni vehículos **En Proceso**.
+  - **Checkboxes por campo** para mostrar u ocultar libremente *Patente, Cliente, Producto, Origen/Proveedor, Destino, Transportista, Chofer, Guía de Despacho, Cant. de Fardos, Estado, Fechas/Operador y Observaciones* (con persistencia en `appsettings.json` aplicada a Visor, Vista Previa, Impresión, PDF, Excel `.xlsx` y Copia de Texto sin borrar datos en Firebird).
+  - **Encabezado estandarizado**: **`N° Folio: xxxxxx`** en negrita (preservando ceros iniciales), **`Tipo de Pesaje: RECEPCIÓN DE CARGA / DESPACHO DE CARGA / MOVIMIENTO INTERNO`** destacado sin recortes, **Bruto/Tara** en negrita y **Neto** en negrita con fuente mayor.
+- **Cantidad de Fardos, CRUD sin Conflictos de Folio y División en 2 (`TicketEditorDialog` + `SplitTicketDialog`)**:
+  - Ingreso numérico no negativo de **Cantidad de Fardos** (`Fardos`) con checkbox de visualización en formularios, grillas, reportes y exportaciones, además de migración idempotente compatible con BD remotas ODS 9 sin dicha columna.
+  - Ingreso manual independiente de **Bruto**, **Tara** y **Neto** (con auto-cálculo opcional).
+  - **División automática de Tickets en 2 folios** (ej.: Folio `#1` Neto `10` -> Folio `#1` Neto `6` + nuevo Folio `#2` Neto `4`, con reparto proporcional y validación explícita de fardos), respetando históricos y vehículos **En Proceso**.
 - **Gestión Completa de Usuarios y Seguridad RBAC (`UsuariosForm`)**:
-  - Cuenta administradora principal **`barriagada`** (clave inicial **`Cambias0`**) garantizada en inicialización y migración.
+  - Cuenta administradora principal **`barriagada`** (clave inicial **`Cambias0`**) garantizada en inicialización y migración; validaciones RBAC en UI y capa de guardado.
   - CRUD completo, restablecimiento de clave con visor mostrar/ocultar, plantillas (**Admin Total / Operador Pesaje / Solo Consulta**), permisos granulares y protección del último administrador activo.
-- **Menús Contextuales por Clic Derecho (`ContextMenuStrip`)**:
-  - Clic derecho en **Camiones en Tránsito**, **Administración de Pesajes**, **Gestión de Usuarios**, **Detalle BI** y **Diálogos de Búsqueda** para visualizar, modificar, dividir, duplicar, completar salida, anular/reactivar, exportar a PDF o copiar datos al instante.
-- **Centro Analítico BI, KPIs y Exportación Nativa PDF + Excel (`.xlsx`)**:
+- **Menús Contextuales Universales (`UniversalContextMenuService`)**:
+  - Clic derecho estandarizado en **Camiones en Tránsito**, **Administración de Pesajes**, **Informes BI y Gráficos**, **Usuarios**, **Pesaje Ejes MOP**, **Logs**, **Catálogos** y **Búsquedas**, mostrando solo acciones válidas según selección y permisos RBAC.
+- **Centro Analítico BI, Exportación Estandarizada a Página Completa (PDF / Excel `.xlsx` / Impresión)**:
   - Panel de **Informes y Auditoría** con filtro `DatePicker` (**Hoy / 7D / Mes / Todo**), segmentadores reactivos (**Patente, Proveedor/Origen, Cliente, Producto, Tipo, Estado, Búsqueda**), 5 tarjetas **KPI**, pestañas segmentadas, **Gráficos KPI** nativos y 11 informes operativos.
-  - Exportación **cero-dependencias** a **PDF** corporativo (`PdfDocumentWriter`) y libro **Excel `.xlsx` de 6 hojas** (`Resumen_KPI`, `Detalle_Pesajes` y resúmenes), además de `.dbf` y `.csv`.
+  - Salidas unificadas (`StandardTableReport`) **cero-dependencias** en **Impresión**, **PDF** corporativo (`PdfDocumentWriter`) con encabezados repetidos/totales y **Excel `.xlsx`** (`Print_Titles`, ajuste a página, formato `000000`/`#,##0`, libro BI de 6 hojas), además de `.dbf` y `.csv`.
 - **Conexión Remota en Red, Visor RS-232 y Cero Dependencias**:
   - Modal de BD Remota (`RemoteDatabaseResolver` + `DatabaseCapabilities`) para rutas UNC/IP (`\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`), migrador ODS 9.1, visor COM1..COM16 (`STX=0`), simulación `/TEST` y logs (`ErrorLogViewerDialog`).
 
@@ -70,13 +71,13 @@ Sistema integral de pesaje de camiones en báscula comercial, control de peso po
 ## Instalación
 
 ### Opción 1 — Instalador Windows (Inno Setup 7)
-Descargue `PesajeProCamion_Setup_v2.2.1.exe` desde la sección **Releases** de GitHub y ejecute el asistente (actualiza versiones anteriores conservando configuración y datos):
+Descargue `PesajeProCamion_Setup_v2.3.0.exe` desde la sección **Releases** de GitHub y ejecute el asistente (actualiza versiones anteriores conservando configuración y datos):
 ```powershell
-PesajeProCamion_Setup_v2.2.1.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+PesajeProCamion_Setup_v2.3.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ### Opción 2 — Edición Portable Zero-Dependencias
-Descomprima `PesajeProCamion_Portable_v2.2.1_win-x64.zip` y ejecute `PesajeProCamion.App.exe` directamente sin instalar ni requerir privilegios administrativos. Con `portable.flag` o `appsettings.json` junto al ejecutable, la configuración y los archivos `Logs\` se conservan junto al binario.
+Descomprima `PesajeProCamion_Portable_v2.3.0_win-x64.zip` y ejecute `PesajeProCamion.App.exe` directamente sin instalar ni requerir privilegios administrativos. Con `portable.flag` o `appsettings.json` junto al ejecutable, la configuración y los archivos `Logs\` se conservan junto al binario.
 
 ---
 
@@ -120,9 +121,21 @@ Documentación detallada en `docs/`:
 
 ---
 
+## Ubicación de Configuración, Logs y Datos
+- **Modo Instalado**: Configuración de servidor BD y preferencias visuales (`appsettings.json`) en `%LocalAppData%\PesajeProCamion\`; logs de diagnóstico en `%LocalAppData%\PesajeProCamion\Logs\`; base Firebird local por defecto en `%ProgramData%\PesajeProCamion\Data\WMDBSPC.FDB`.
+- **Modo Portable**: Si existe `portable.flag` junto a `PesajeProCamion.App.exe`, tanto `appsettings.json` como `Logs\` permanecen junto al binario sin tocar el registro del sistema.
+
+---
+
+## Solución de Problemas Frecuentes
+- **Error de red o ruta UNC en BD remota**: Use el botón **Servidor BD** -> **Analizar Ruta Red** y **Probar Conexión**; verifique que el puerto TCP `3050` de Firebird esté abierto en el equipo servidor y que los logs (`Visor de Logs y Diagnóstico`) no indiquen bloqueo de firewall.
+- **Bases Firebird ODS 9 heredadas sin columnas recientes (`FARDOS`, `ID_LOG`, auditoría)**: `DatabaseCapabilities` adapta las consultas automáticamente en modo de solo lectura/escritura segura sin alterar el esquema remoto.
+
+---
+
 ## Versionado e Historial de Cambios
 
-Versionado semántico (`MAJOR.MINOR.PATCH`). Versión actual: **`2.2.1`**.
+Versionado semántico (`MAJOR.MINOR.PATCH`). Versión actual: **`2.3.0`**.
 Ver historial completo en [CHANGELOG.md](CHANGELOG.md).
 
 ## Créditos

@@ -205,6 +205,20 @@ public sealed class PesajeMopForm : Form
         ]);
         split.Panel2.Controls.Add(_gridTandems);
 
+        ContextActionSpec[] mopActions =
+        [
+            new ContextActionSpec
+            {
+                Text = "Ver Tabla Normativa Oficial MOP...",
+                Icon = AppIcon.AxleMop,
+                IconTint = AppTheme.NavyPrimary,
+                Group = 10,
+                ExecuteAsync = _ => { ShowNormativaModal(); return Task.CompletedTask; }
+            }
+        ];
+        UniversalContextMenuService.AttachToGrid(_gridEjes, () => _services.UsuarioActual, mopActions, "DETALLE PESAJE POR EJES MOP", () => $"Patente: {_txtPatente.Text}", "Ejes_MOP");
+        UniversalContextMenuService.AttachToGrid(_gridTandems, () => _services.UsuarioActual, mopActions, "DETALLE CONJUNTOS TÁNDEM MOP", () => $"Patente: {_txtPatente.Text}", "Tandems_MOP");
+
         Controls.AddRange([split, actionsBar, metaPanel, topPanel]);
         _services.Scale.ReadingReceived += OnReadingReceived;
     }

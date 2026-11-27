@@ -4,6 +4,7 @@ using System.Windows.Forms;
 using PesajeProCamion.App.Services;
 using PesajeProCamion.App.UI.Dialogs;
 using PesajeProCamion.App.UI.Theme;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 using PesajeProCamion.Domain.Security;
 using PesajeProCamion.Domain.Validation;
@@ -13,9 +14,10 @@ namespace PesajeProCamion.App.UI.Management;
 
 /// <summary>
 /// Visualizador y personalizador interactivo de Ticket Comercial:
-/// - Permite marcar/desmarcar campos visibles (Patente, Cliente, Producto, Origen, Destino, Transportista, Chofer, Guía, Tiempos, Observaciones)
-/// - Destaca el Tipo de Pesaje en el encabezado superior derecho
-/// - Permite editar el contenido/pesos del ticket en vivo (y guardar cambios en BD) o dividir el ticket en 2 folios.
+/// - Permite marcar/desmarcar campos visibles (Patente, Cliente, Producto, Origen, Destino, Transportista, Chofer, Guía, Fardos, Estado, Tiempos, Observaciones)
+/// - Muestra N° Folio: xxxxxx en negrita y Tipo de Pesaje destacado sin recortes
+/// - Destaca Bruto/Tara en negrita y Neto en negrita con fuente mayor
+/// - Permite editar contenido/fardos/pesos en vivo, dividir en 2 folios, exportar PDF/XLSX, imprimir y usar menú clic derecho.
 /// </summary>
 public sealed class TicketViewerDialog : Form
 {
@@ -40,6 +42,8 @@ public sealed class TicketViewerDialog : Form
     private readonly CheckBox _chkTransp = new() { Text = "Transportista" };
     private readonly CheckBox _chkChofer = new() { Text = "Chofer" };
     private readonly CheckBox _chkGuia = new() { Text = "Guía Despacho" };
+    private readonly CheckBox _chkFardos = new() { Text = "Cant. de Fardos" };
+    private readonly CheckBox _chkEstado = new() { Text = "Estado" };
     private readonly CheckBox _chkTiempos = new() { Text = "Fechas / Oper." };
     private readonly CheckBox _chkObs = new() { Text = "Observaciones" };
 
@@ -54,6 +58,7 @@ public sealed class TicketViewerDialog : Form
     private readonly TextBox _txtTransp = new();
     private readonly TextBox _txtChofer = new();
     private readonly TextBox _txtGuia = new() { MaxLength = 50, CharacterCasing = CharacterCasing.Upper };
+    private readonly NumericUpDown _numFardos = new() { Minimum = 0, Maximum = 999_999, ThousandsSeparator = true };
     private readonly NumericUpDown _numBruto = new() { Maximum = 200_000, ThousandsSeparator = true };
     private readonly NumericUpDown _numTara = new() { Maximum = 200_000, ThousandsSeparator = true };
     private readonly NumericUpDown _numNeto = new() { Maximum = 200_000, ThousandsSeparator = true };
@@ -69,8 +74,8 @@ public sealed class TicketViewerDialog : Form
         _workingTicket = CloneTicket(pesaje);
         _isEnProceso = isEnProceso;
 
-        Text = $"Visor y Editor de Ticket — Folio #{pesaje.FolioPesaje}";
-        AppTheme.ConfigureResponsiveDialog(this, 1180, 770, 960, 660, resizable: true);
+        Text = $"Visor y Editor de Ticket — {TicketCustomizationHelper.FormatFolioHeader(pesaje.FolioPesaje)}";
+        AppTheme.ConfigureResponsiveDialog(this, 1180, 790, 990, 680, resizable: true);
         BuildUi();
         BindInitialState();
     }
@@ -98,62 +103,64 @@ public sealed class TicketViewerDialog : Form
             BackColor = Color.Transparent,
             Font = AppTheme.FontTitle,
             TextAlign = ContentAlignment.MiddleLeft,
-            Text = $"Visor y Personalizador de Ticket Comercial — Folio #{_pesaje.FolioPesaje:D6}"
+            Text = $"Visor y Personalizador de Ticket Comercial — {TicketCustomizationHelper.FormatFolioHeader(_pesaje.FolioPesaje)}"
         });
 
         var actionsBar = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 52,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             BackColor = AppTheme.SurfaceCard,
-            Padding = new Padding(10, 8, 10, 8)
+            Padding = new Padding(8, 8, 8, 8)
         };
         var actionsRow = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
+            WrapContents = true,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Margin = Padding.Empty,
             Padding = Padding.Empty
         };
 
         var lblCopies = new Label { Text = "Copias:", AutoSize = true, Font = AppTheme.FontBodyBold, Margin = new Padding(0, 9, 4, 0) };
-        _numCopias.Width = 50;
+        _numCopias.Width = 44;
         _numCopias.Minimum = 1;
         _numCopias.Maximum = 20;
         _numCopias.Value = Math.Clamp(_services.ConfigActual.NroCopiasTicket, 1, 20);
-        _numCopias.Margin = new Padding(0, 5, 8, 0);
+        _numCopias.Margin = new Padding(0, 5, 6, 0);
 
-        var btnPrint = new Button { Size = new Size(138, 34), Margin = new Padding(0, 0, 6, 0) };
-        AppTheme.StylePrimaryButton(btnPrint, AppIcon.Print, "Imprimir / Vista", "Vista previa e impresión con campos marcados", _tt);
+        var btnPrint = new Button { Size = new Size(98, 34), Margin = new Padding(0, 0, 5, 4) };
+        AppTheme.StylePrimaryButton(btnPrint, AppIcon.Print, "Imprimir", "Vista previa e impresión con campos visibles configurados", _tt);
         btnPrint.Enabled = PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ImprimirTicket);
-        btnPrint.Click += (_, _) => PrintPreviewTicket();
+        btnPrint.Click += (_, _) => PrintPreviewTicket(_services.TicketFields);
 
-        var btnPdf = new Button { Size = new Size(124, 34), Margin = new Padding(0, 0, 6, 0) };
+        var btnPdf = new Button { Size = new Size(116, 34), Margin = new Padding(0, 0, 5, 4) };
         AppTheme.StyleSecondaryButton(btnPdf, AppIcon.Pdf, "Exportar PDF", "Guardar ticket personalizado en PDF", AppTheme.AccentDanger, _tt);
-        btnPdf.Click += (_, _) => ExportTicketPdf();
+        btnPdf.Click += (_, _) => ExportTicketPdf(_services.TicketFields);
 
-        _btnSplit.Size = new Size(124, 34);
-        _btnSplit.Margin = new Padding(0, 0, 6, 0);
+        var btnXlsx = new Button { Size = new Size(96, 34), Margin = new Padding(0, 0, 5, 4) };
+        AppTheme.StyleSecondaryButton(btnXlsx, AppIcon.ExportExcel, "Excel", "Guardar ticket estandarizado en Excel (.xlsx)", AppTheme.AccentEmerald, _tt);
+        btnXlsx.Click += (_, _) => ExportTicketXlsx(_services.TicketFields);
+
+        _btnSplit.Size = new Size(112, 34);
+        _btnSplit.Margin = new Padding(0, 0, 5, 4);
         AppTheme.StyleSecondaryButton(_btnSplit, AppIcon.Split, "Dividir en 2", "Dividir este ticket en 2 folios asignando folio libre al nuevo", AppTheme.AccentEmerald, _tt);
         _btnSplit.Click += async (_, _) => await SplitCurrentTicketAsync();
 
-        _btnModify.Size = new Size(140, 34);
-        _btnModify.Margin = new Padding(0, 0, 6, 0);
-        AppTheme.StyleSecondaryButton(_btnModify, AppIcon.EditTicket, "Editor Completo", "Abrir formulario completo con catálogos", AppTheme.NavyPrimary, _tt);
+        _btnModify.Size = new Size(124, 34);
+        _btnModify.Margin = new Padding(0, 0, 5, 4);
+        AppTheme.StyleSecondaryButton(_btnModify, AppIcon.EditTicket, "Editar Ticket", "Abrir formulario completo con catálogos", AppTheme.NavyPrimary, _tt);
         _btnModify.Enabled = PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ModificarRegistro);
         _btnModify.Click += async (_, _) => await OpenFullEditorAsync();
 
-        var btnCopyRaw = new Button { Size = new Size(118, 34), Margin = new Padding(0, 0, 6, 0) };
+        var btnCopyRaw = new Button { Size = new Size(112, 34), Margin = new Padding(0, 0, 5, 4) };
         AppTheme.StyleSecondaryButton(btnCopyRaw, AppIcon.Copy, "Copiar Texto", "Copiar texto con campos visibles al portapapeles", null, _tt);
-        btnCopyRaw.Click += (_, _) =>
-        {
-            string raw = TicketPrinterService.BuildRawTicketText(_workingTicket, BuildDisplayBascula(), _services.ConfigActual, _services.TicketFields, _isEnProceso);
-            Clipboard.SetText(raw);
-            MessageBox.Show(this, "Detalle del ticket copiado al portapapeles.", "Copiar", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        };
+        btnCopyRaw.Click += (_, _) => CopyRawText();
 
-        var btnClose = new Button { Size = new Size(96, 34), Margin = Padding.Empty };
+        var btnClose = new Button { Size = new Size(88, 34), Margin = new Padding(0, 0, 0, 4) };
         AppTheme.StyleSecondaryButton(btnClose, AppIcon.Cancel, "Cerrar", "Cerrar visualizador", null, _tt);
         btnClose.Click += (_, _) =>
         {
@@ -161,24 +168,23 @@ public sealed class TicketViewerDialog : Form
             Close();
         };
 
-        actionsRow.Controls.AddRange([lblCopies, _numCopias, btnPrint, btnPdf, _btnSplit, _btnModify, btnCopyRaw, btnClose]);
+        actionsRow.Controls.AddRange([lblCopies, _numCopias, btnPrint, btnPdf, btnXlsx, _btnSplit, _btnModify, btnCopyRaw, btnClose]);
         actionsBar.Controls.Add(actionsRow);
 
-        // Split: Vista previa izquierda | Panel personalización & edición en vivo derecha
         var split = new SplitContainer
         {
-            Size = new Size(1160, 620),
+            Size = new Size(1160, 650),
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
             FixedPanel = FixedPanel.Panel2,
-            Panel1MinSize = 460,
-            Panel2MinSize = 350,
+            Panel1MinSize = 480,
+            Panel2MinSize = 355,
             SplitterDistance = 760,
             BackColor = AppTheme.BorderSubtle
         };
 
         var scrollHost = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(16, 12, 16, 12), BackColor = AppTheme.BackgroundLight };
-        _ticketCanvas.Size = new Size(712, 578);
+        _ticketCanvas.Size = new Size(712, 600);
         _ticketCanvas.Dock = DockStyle.Top;
         _ticketCanvas.BackColor = Color.White;
         _ticketCanvas.BorderStyle = BorderStyle.FixedSingle;
@@ -187,25 +193,27 @@ public sealed class TicketViewerDialog : Form
         scrollHost.Controls.Add(_ticketCanvas);
         split.Panel1.Controls.Add(scrollHost);
 
+        UniversalContextMenuService.AttachToControl(_ticketCanvas, () => _services.UsuarioActual, BuildCanvasContextActions());
+
         var rightScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = AppTheme.SurfaceCard, Padding = new Padding(10) };
 
-        // 1. Checkboxes de visibilidad de campos
+        // 1. Checkboxes de visibilidad de campos (ahora incluye Cant. de Fardos y Estado)
         var grpVis = new GroupBox
         {
             Text = "Campos Visibles del Ticket",
             Dock = DockStyle.Top,
-            Height = 178,
+            Height = 200,
             Font = AppTheme.FontBodyBold,
             ForeColor = AppTheme.NavyDark,
             Padding = new Padding(8, 4, 8, 4)
         };
-        var chkGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 6 };
+        var chkGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 7 };
         chkGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
         chkGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-        for (int r = 0; r < 5; r++) chkGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        for (int r = 0; r < 6; r++) chkGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         chkGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-        CheckBox[] chks = [_chkPatente, _chkCliente, _chkProducto, _chkOrigen, _chkDestino, _chkTransp, _chkChofer, _chkGuia, _chkTiempos, _chkObs];
+        CheckBox[] chks = [_chkPatente, _chkCliente, _chkProducto, _chkOrigen, _chkDestino, _chkTransp, _chkChofer, _chkGuia, _chkFardos, _chkEstado, _chkTiempos, _chkObs];
         for (int i = 0; i < chks.Length; i++)
         {
             CheckBox c = chks[i];
@@ -217,34 +225,34 @@ public sealed class TicketViewerDialog : Form
         }
 
         var presetVisFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
-        var btnVisAll = new Button { Size = new Size(104, 30), Margin = new Padding(0, 2, 6, 0) };
-        AppTheme.StyleSecondaryButton(btnVisAll, AppIcon.Check, "Marcar Todos", "Mostrar todos los campos en ticket/PDF", AppTheme.NavyPrimary, _tt);
+        var btnVisAll = new Button { Size = new Size(108, 30), Margin = new Padding(0, 2, 6, 0) };
+        AppTheme.StyleSecondaryButton(btnVisAll, AppIcon.Check, "Marcar Todos", "Mostrar todos los campos en ticket/PDF/XLSX", AppTheme.NavyPrimary, _tt);
         btnVisAll.Click += (_, _) => SetAllFieldsVisible(true);
 
-        var btnVisBasic = new Button { Size = new Size(104, 30), Margin = new Padding(0, 2, 0, 0) };
-        AppTheme.StyleSecondaryButton(btnVisBasic, AppIcon.Filter, "Solo Básicos", "Mostrar solo Patente, Cliente, Producto y Guía", null, _tt);
+        var btnVisBasic = new Button { Size = new Size(108, 30), Margin = new Padding(0, 2, 0, 0) };
+        AppTheme.StyleSecondaryButton(btnVisBasic, AppIcon.Filter, "Solo Básicos", "Mostrar Patente, Cliente, Producto, Guía y Tiempos", null, _tt);
         btnVisBasic.Click += (_, _) => SetBasicFieldsVisible();
 
         presetVisFlow.Controls.AddRange([btnVisAll, btnVisBasic]);
-        chkGrid.Controls.Add(presetVisFlow, 0, 5);
+        chkGrid.Controls.Add(presetVisFlow, 0, 6);
         chkGrid.SetColumnSpan(presetVisFlow, 2);
         grpVis.Controls.Add(chkGrid);
 
-        // 2. Editor en vivo de contenido / información del ticket
+        // 2. Editor en vivo de contenido / fardos / pesos
         var grpContent = new GroupBox
         {
             Text = "Editar Contenido del Ticket (En Vivo)",
             Dock = DockStyle.Top,
-            Height = 456,
+            Height = 486,
             Font = AppTheme.FontBodyBold,
             ForeColor = AppTheme.NavyDark,
             Padding = new Padding(8, 4, 8, 6),
             Margin = new Padding(0, 6, 0, 0)
         };
-        var editGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 17 };
-        editGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 102f));
+        var editGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 18 };
+        editGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104f));
         editGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        for (int r = 0; r < 16; r++) editGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 23f));
+        for (int r = 0; r < 17; r++) editGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, r == 1 ? 26f : 23f));
         editGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
         _cmbTipo.Items.AddRange(["1 - Recepción", "2 - Despacho", "3 - Mov. Interno"]);
@@ -259,27 +267,29 @@ public sealed class TicketViewerDialog : Form
         AddLiveEditRow(editGrid, 8, "Transportista:", _txtTransp);
         AddLiveEditRow(editGrid, 9, "Chofer:", _txtChofer);
         AddLiveEditRow(editGrid, 10, "Guía Desp.:", _txtGuia);
-        AddLiveEditRow(editGrid, 11, "Bruto (kg):", _numBruto);
-        AddLiveEditRow(editGrid, 12, "Tara (kg):", _numTara);
-        AddLiveEditRow(editGrid, 13, "Neto (kg):", _numNeto);
-        AddLiveEditRow(editGrid, 14, "Obs. 1:", _txtObs1);
-        AddLiveEditRow(editGrid, 15, "Obs. 2:", _txtObs2);
+        AddLiveEditRow(editGrid, 11, "Cant. Fardos:", _numFardos);
+        AddLiveEditRow(editGrid, 12, "Bruto (kg):", _numBruto, boldFont: true);
+        AddLiveEditRow(editGrid, 13, "Tara (kg):", _numTara, boldFont: true);
+        AddLiveEditRow(editGrid, 14, "Neto (kg):", _numNeto, boldFont: true, fontSize: 9.75f);
+        AddLiveEditRow(editGrid, 15, "Obs. 1:", _txtObs1);
+        AddLiveEditRow(editGrid, 16, "Obs. 2:", _txtObs2);
 
         foreach (TextBox tb in new[] { _txtEmpresa, _txtPatente, _txtAcoplado, _txtCliente, _txtProducto, _txtOrigen, _txtDestino, _txtTransp, _txtChofer, _txtGuia, _txtObs1, _txtObs2 })
         {
             tb.TextChanged += (_, _) => SyncWorkingTicketFromInputs();
         }
         _cmbTipo.SelectedIndexChanged += (_, _) => SyncWorkingTicketFromInputs();
+        _numFardos.ValueChanged += (_, _) => SyncWorkingTicketFromInputs();
         _numBruto.ValueChanged += (_, _) => SyncWorkingTicketFromInputs();
         _numTara.ValueChanged += (_, _) => SyncWorkingTicketFromInputs();
         _numNeto.ValueChanged += (_, _) => SyncWorkingTicketFromInputs();
 
         _btnSaveInline.Dock = DockStyle.Fill;
         _btnSaveInline.Margin = new Padding(0, 5, 0, 1);
-        AppTheme.StylePrimaryButton(_btnSaveInline, AppIcon.Save, "Guardar Cambios en BD", "Guardar información/pesos editados en la base de datos", _tt);
+        AppTheme.StylePrimaryButton(_btnSaveInline, AppIcon.Save, "Guardar Cambios en BD", "Guardar información, fardos y pesos editados en la base de datos", _tt);
         _btnSaveInline.Enabled = PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ModificarRegistro);
         _btnSaveInline.Click += async (_, _) => await SaveInlineToDbAsync();
-        editGrid.Controls.Add(_btnSaveInline, 0, 16);
+        editGrid.Controls.Add(_btnSaveInline, 0, 17);
         editGrid.SetColumnSpan(_btnSaveInline, 2);
 
         grpContent.Controls.Add(editGrid);
@@ -291,7 +301,97 @@ public sealed class TicketViewerDialog : Form
         Controls.AddRange([split, actionsBar, header]);
     }
 
-    private static void AddLiveEditRow(TableLayoutPanel tbl, int row, string label, Control ctl)
+    private IReadOnlyList<ContextActionSpec> BuildCanvasContextActions() =>
+    [
+        new ContextActionSpec
+        {
+            Text = "Imprimir / Vista Previa (Campos Visibles)...",
+            Icon = AppIcon.Print,
+            IconTint = AppTheme.NavyPrimary,
+            Group = 1,
+            RequiredPermission = AccionAutorizacion.ImprimirTicket,
+            ExecuteAsync = _ => { PrintPreviewTicket(_services.TicketFields); return Task.CompletedTask; }
+        },
+        new ContextActionSpec
+        {
+            Text = "Exportar a PDF (Campos Visibles)...",
+            Icon = AppIcon.Pdf,
+            IconTint = AppTheme.AccentDanger,
+            Group = 1,
+            ExecuteAsync = _ => { ExportTicketPdf(_services.TicketFields); return Task.CompletedTask; }
+        },
+        new ContextActionSpec
+        {
+            Text = "Exportar a Excel (.xlsx)...",
+            Icon = AppIcon.ExportExcel,
+            IconTint = AppTheme.AccentEmerald,
+            Group = 1,
+            ExecuteAsync = _ => { ExportTicketXlsx(_services.TicketFields); return Task.CompletedTask; }
+        },
+        new ContextActionSpec
+        {
+            Text = "Exportar Ticket Completo PDF (Todos los Campos)...",
+            Icon = AppIcon.Pdf,
+            IconTint = AppTheme.NavyDark,
+            Group = 2,
+            ExecuteAsync = _ => { ExportTicketPdf(TicketFieldVisibility.Default); return Task.CompletedTask; }
+        },
+        new ContextActionSpec
+        {
+            Text = "Copiar Texto del Ticket",
+            Icon = AppIcon.Copy,
+            IconTint = AppTheme.TextPrimary,
+            Group = 2,
+            ExecuteAsync = _ => { CopyRawText(); return Task.CompletedTask; }
+        },
+        new ContextActionSpec
+        {
+            Text = "Dividir Ticket en 2...",
+            Icon = AppIcon.Split,
+            IconTint = AppTheme.AccentEmerald,
+            Group = 3,
+            RequiredPermission = AccionAutorizacion.ModificarRegistro,
+            IsVisible = _ => !_isEnProceso && !_pesaje.Anulado && (_pesaje.Neto > 1 || Math.Abs(_pesaje.Bruto - _pesaje.Tara) > 1) &&
+                             PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro),
+            ExecuteAsync = _ => SplitCurrentTicketAsync()
+        },
+        new ContextActionSpec
+        {
+            Text = "Abrir Editor Completo...",
+            Icon = AppIcon.EditTicket,
+            IconTint = AppTheme.NavyPrimary,
+            Group = 3,
+            RequiredPermission = AccionAutorizacion.ModificarRegistro,
+            ExecuteAsync = _ => OpenFullEditorAsync()
+        },
+        new ContextActionSpec
+        {
+            Text = "Guardar Cambios en BD",
+            Icon = AppIcon.Save,
+            IconTint = AppTheme.NavyDark,
+            Group = 3,
+            RequiredPermission = AccionAutorizacion.ModificarRegistro,
+            ExecuteAsync = _ => SaveInlineToDbAsync()
+        },
+        new ContextActionSpec
+        {
+            Text = "Marcar Todos los Campos Visibles",
+            Icon = AppIcon.Check,
+            IconTint = AppTheme.NavyPrimary,
+            Group = 4,
+            ExecuteAsync = _ => { SetAllFieldsVisible(true); return Task.CompletedTask; }
+        },
+        new ContextActionSpec
+        {
+            Text = "Mostrar Solo Campos Básicos",
+            Icon = AppIcon.Filter,
+            IconTint = AppTheme.TextMuted,
+            Group = 4,
+            ExecuteAsync = _ => { SetBasicFieldsVisible(); return Task.CompletedTask; }
+        }
+    ];
+
+    private static void AddLiveEditRow(TableLayoutPanel tbl, int row, string label, Control ctl, bool boldFont = false, float fontSize = 8.5f)
     {
         tbl.Controls.Add(new Label
         {
@@ -301,9 +401,17 @@ public sealed class TicketViewerDialog : Form
             Font = new Font("Segoe UI", 8.25f, FontStyle.Bold),
             ForeColor = AppTheme.TextPrimary
         }, 0, row);
-        ctl.Dock = DockStyle.Fill;
+        if (ctl is ComboBox)
+        {
+            ctl.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        }
+        else
+        {
+            ctl.Dock = DockStyle.Fill;
+        }
         ctl.Margin = new Padding(0, 1, 0, 1);
-        ctl.Font = new Font("Segoe UI", 8.5f);
+        ctl.Font = new Font("Segoe UI", fontSize, boldFont ? FontStyle.Bold : FontStyle.Regular);
+        if (ctl is NumericUpDown nud) nud.TextAlign = HorizontalAlignment.Right;
         tbl.Controls.Add(ctl, 1, row);
     }
 
@@ -321,6 +429,8 @@ public sealed class TicketViewerDialog : Form
             _chkTransp.Checked = v.MostrarTransportista;
             _chkChofer.Checked = v.MostrarChofer;
             _chkGuia.Checked = v.MostrarGuiaDespacho;
+            _chkFardos.Checked = v.MostrarFardos;
+            _chkEstado.Checked = v.MostrarEstado;
             _chkTiempos.Checked = v.MostrarTiemposOperador;
             _chkObs.Checked = v.MostrarObservaciones;
 
@@ -335,6 +445,7 @@ public sealed class TicketViewerDialog : Form
             _txtTransp.Text = string.IsNullOrWhiteSpace(_workingTicket.NombreTransportista) ? _workingTicket.Transportista : _workingTicket.NombreTransportista;
             _txtChofer.Text = string.IsNullOrWhiteSpace(_workingTicket.NombreChofer) ? _workingTicket.Chofer : _workingTicket.NombreChofer;
             _txtGuia.Text = _workingTicket.GuiaDespacho;
+            _numFardos.Value = Math.Clamp(_workingTicket.Fardos, 0, 999_999);
             _numBruto.Value = Math.Clamp(_workingTicket.Bruto, 0, 200_000);
             _numTara.Value = Math.Clamp(_workingTicket.Tara, 0, 200_000);
             _numNeto.Value = _isEnProceso ? 0 : Math.Clamp(_workingTicket.Neto, 0, 200_000);
@@ -366,15 +477,17 @@ public sealed class TicketViewerDialog : Form
         v.MostrarTransportista = _chkTransp.Checked;
         v.MostrarChofer = _chkChofer.Checked;
         v.MostrarGuiaDespacho = _chkGuia.Checked;
+        v.MostrarFardos = _chkFardos.Checked;
+        v.MostrarEstado = _chkEstado.Checked;
         v.MostrarTiemposOperador = _chkTiempos.Checked;
         v.MostrarObservaciones = _chkObs.Checked;
         try
         {
             AppConfigStore.SaveTicketFields(v);
         }
-        catch
+        catch (Exception ex)
         {
-            // No bloquear visor visual si el directorio es de solo lectura
+            AppLogger.Warn("TicketViewer", $"No se pudieron persistir preferencias visuales de ticket: {ex.Message}");
         }
         RefreshCanvasLayout();
     }
@@ -382,7 +495,7 @@ public sealed class TicketViewerDialog : Form
     private void SetAllFieldsVisible(bool visible)
     {
         _suppressLiveSync = true;
-        foreach (CheckBox c in new[] { _chkPatente, _chkCliente, _chkProducto, _chkOrigen, _chkDestino, _chkTransp, _chkChofer, _chkGuia, _chkTiempos, _chkObs })
+        foreach (CheckBox c in new[] { _chkPatente, _chkCliente, _chkProducto, _chkOrigen, _chkDestino, _chkTransp, _chkChofer, _chkGuia, _chkFardos, _chkEstado, _chkTiempos, _chkObs })
         {
             c.Checked = visible;
         }
@@ -401,6 +514,8 @@ public sealed class TicketViewerDialog : Form
         _chkTransp.Checked = false;
         _chkChofer.Checked = false;
         _chkGuia.Checked = true;
+        _chkFardos.Checked = true;
+        _chkEstado.Checked = false;
         _chkTiempos.Checked = true;
         _chkObs.Checked = false;
         _suppressLiveSync = false;
@@ -420,6 +535,7 @@ public sealed class TicketViewerDialog : Form
         _workingTicket.NombreTransportista = _txtTransp.Text.Trim();
         _workingTicket.NombreChofer = _txtChofer.Text.Trim();
         _workingTicket.GuiaDespacho = _txtGuia.Text.Trim();
+        _workingTicket.Fardos = (int)_numFardos.Value;
         _workingTicket.Bruto = (int)_numBruto.Value;
         _workingTicket.Tara = (int)_numTara.Value;
         _workingTicket.Neto = _isEnProceso ? 0 : (int)_numNeto.Value;
@@ -432,8 +548,8 @@ public sealed class TicketViewerDialog : Form
     {
         int fieldCount = TicketPrinterService.BuildVisibleFieldRows(_workingTicket, _services.TicketFields).Count;
         int footerH = (_services.TicketFields.MostrarTiemposOperador ? 82 : 0) + (_services.TicketFields.MostrarObservaciones ? 28 : 0);
-        int targetH = 148 + fieldCount * 22 + 106 + (footerH > 0 ? footerH + 14 : 8);
-        _ticketCanvas.Height = Math.Max(390, targetH);
+        int targetH = 154 + fieldCount * 22 + 114 + (footerH > 0 ? footerH + 14 : 8);
+        _ticketCanvas.Height = Math.Max(410, targetH);
         _ticketCanvas.Invalidate();
     }
 
@@ -481,22 +597,19 @@ public sealed class TicketViewerDialog : Form
         using var fTitle = new Font("Segoe UI", 13f, FontStyle.Bold);
         using var fSub = new Font("Segoe UI", 8.75f, FontStyle.Regular);
         using var fSec = new Font("Segoe UI", 9.5f, FontStyle.Bold);
-        using var fBadge = new Font("Segoe UI", 9.25f, FontStyle.Bold);
+        using var fBadge = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+        using var fFolio = new Font("Segoe UI", 15f, FontStyle.Bold);
         using var fVal = new Font("Segoe UI", 9.5f, FontStyle.Regular);
-        using var fBig = new Font("Segoe UI", 14.5f, FontStyle.Bold);
-        using var fLblW = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+        using var fWeightBt = new Font("Segoe UI", 16.5f, FontStyle.Bold);
+        using var fWeightNeto = new Font("Segoe UI", 21.5f, FontStyle.Bold);
+        using var fLblW = new Font("Segoe UI", 8.75f, FontStyle.Bold);
         using var goldBrush = new SolidBrush(AppTheme.GoldAccent);
         using var mutedBrush = new SolidBrush(AppTheme.TextMuted);
         using var darkBrush = new SolidBrush(AppTheme.NavyDark);
         using var textBrush = new SolidBrush(AppTheme.TextPrimary);
         using var linePen = new Pen(AppTheme.BorderSubtle, 1f);
 
-        int textLeft = logo is not null ? pad + 128 : pad;
-        g.DrawString("TICKET DE PESAJE COMERCIAL", fTitle, Brushes.White, textLeft, 12);
-        g.DrawString(company, fSec, goldBrush, textLeft, 36);
-        g.DrawString(dir, fSub, Brushes.LightSteelBlue, textLeft, 54);
-
-        // Badge superior derecho: TIPO DE PESAJE destacado (en vez de COMPLETADO)
+        // Badge superior derecho: Tipo de Pesaje destacado sin recortes
         string badgeText = TicketCustomizationHelper.FormatTipoPesajeBadge(_workingTicket.TipoPesaje, _workingTicket.Anulado, _isEnProceso);
         Color badgeColor = _workingTicket.Anulado
             ? AppTheme.AccentDanger
@@ -505,20 +618,40 @@ public sealed class TicketViewerDialog : Form
                 : (_workingTicket.TipoPesaje == TipoPesaje.Despacho
                     ? Color.FromArgb(0, 118, 173)
                     : (_workingTicket.TipoPesaje == TipoPesaje.MovimientoInterno ? Color.FromArgb(14, 124, 123) : AppTheme.AccentEmerald)));
-        int badgeW = Math.Clamp((int)g.MeasureString(badgeText, fBadge).Width + 24, 150, 224);
+        int badgeW = Math.Clamp((int)g.MeasureString(badgeText, fBadge).Width + 28, 185, Math.Max(220, w / 2 - pad));
         using var badgeBrush = new SolidBrush(badgeColor);
-        var badgeRect = new Rectangle(w - pad - badgeW, 18, badgeW, 34);
+        var badgeRect = new Rectangle(w - pad - badgeW, 14, badgeW, 34);
         g.FillRectangle(badgeBrush, badgeRect);
         using var badgeBorder = new Pen(AppTheme.GoldAccent, 1.2f);
         g.DrawRectangle(badgeBorder, badgeRect);
-        using var centerFmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        using var centerFmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter };
         g.DrawString(badgeText, fBadge, Brushes.White, badgeRect, centerFmt);
 
-        int y = 94;
-        g.DrawString($"FOLIO N° {_workingTicket.FolioPesaje:D6}", new Font("Segoe UI", 14f, FontStyle.Bold), darkBrush, pad, y);
-        string estadoStr = TicketCustomizationHelper.FormatEstadoTicket(_workingTicket.Anulado, _isEnProceso);
-        g.DrawString($"ESTADO: {estadoStr}", fSec, _workingTicket.Anulado ? Brushes.Firebrick : mutedBrush, w - pad - 200, y + 4);
-        y += 32;
+        int textLeft = logo is not null ? pad + 128 : pad;
+        int titleMaxW = Math.Max(140, badgeRect.Left - textLeft - 10);
+        using var clipFmt = new StringFormat { Trimming = StringTrimming.EllipsisCharacter };
+        g.DrawString("TICKET DE PESAJE COMERCIAL", fTitle, Brushes.White, new RectangleF(textLeft, 12, titleMaxW, 24), clipFmt);
+        g.DrawString(company, fSec, goldBrush, new RectangleF(textLeft, 36, titleMaxW, 18), clipFmt);
+        g.DrawString(dir, fSub, Brushes.LightSteelBlue, new RectangleF(textLeft, 54, w - textLeft - pad, 16), clipFmt);
+
+        // Franja N° Folio: xxxxxx en Negrita + Estado configurable por checkbox
+        int y = 92;
+        g.DrawString(TicketCustomizationHelper.FormatFolioHeader(_workingTicket.FolioPesaje), fFolio, darkBrush, pad, y);
+        if (_services.TicketFields.MostrarEstado)
+        {
+            string estadoStr = $"Estado: {TicketCustomizationHelper.FormatEstadoTicket(_workingTicket.Anulado, _isEnProceso)}";
+            int ew = Math.Max(136, (int)g.MeasureString(estadoStr, fSec).Width + 22);
+            var estRect = new Rectangle(w - pad - ew, y + 2, ew, 26);
+            Color eBgCol = _workingTicket.Anulado ? Color.FromArgb(250, 228, 228) : Color.FromArgb(228, 246, 238);
+            Color eFgCol = _workingTicket.Anulado ? AppTheme.AccentDanger : AppTheme.AccentEmerald;
+            using var eBg = new SolidBrush(eBgCol);
+            using var eFg = new SolidBrush(eFgCol);
+            using var ePen = new Pen(eFgCol, 1f);
+            g.FillRectangle(eBg, estRect);
+            g.DrawRectangle(ePen, estRect);
+            g.DrawString(estadoStr, fSec, eFg, estRect, centerFmt);
+        }
+        y += 34;
         g.DrawLine(linePen, pad, y, w - pad, y);
         y += 10;
 
@@ -526,24 +659,29 @@ public sealed class TicketViewerDialog : Form
         foreach ((string lbl, string val) in fields)
         {
             g.DrawString(lbl + ":", fSec, mutedBrush, pad, y);
-            g.DrawString(string.IsNullOrWhiteSpace(val) ? "-" : val, fVal, textBrush, pad + 170, y);
+            g.DrawString(string.IsNullOrWhiteSpace(val) ? "-" : val, fVal, textBrush, new RectangleF(pad + 178, y, w - pad * 2 - 178, 20), clipFmt);
             y += 22;
             g.DrawLine(linePen, pad, y - 3, w - pad, y - 3);
         }
 
+        // Tarjeta Pesos: Bruto y Tara en Negrita grandes; NETO aún más grande y destacado en Negrita
         y += 8;
-        var wBox = new Rectangle(pad, y, w - 2 * pad, 84);
+        var wBox = new Rectangle(pad, y, w - 2 * pad, 96);
         using var navyBrush = new SolidBrush(AppTheme.NavyDark);
         using var goldPen = new Pen(AppTheme.GoldAccent, 1.8f);
         g.FillRectangle(navyBrush, wBox);
         g.DrawRectangle(goldPen, wBox);
 
         int colW = wBox.Width / 3;
-        DrawWeightCell(g, new Rectangle(wBox.X, wBox.Y, colW, wBox.Height), "PESO BRUTO", $"{_workingTicket.Bruto:N0} kg", Brushes.White, fLblW, fBig, goldBrush);
-        DrawWeightCell(g, new Rectangle(wBox.X + colW, wBox.Y, colW, wBox.Height), _workingTicket.TaraRegistrada ? "PESO TARA (REG.)" : "PESO TARA", $"{_workingTicket.Tara:N0} kg", Brushes.White, fLblW, fBig, goldBrush);
+        using var divPen = new Pen(Color.FromArgb(32, 82, 112), 1f);
+        g.DrawLine(divPen, wBox.X + colW, wBox.Y + 10, wBox.X + colW, wBox.Bottom - 10);
+        g.DrawLine(divPen, wBox.X + colW * 2, wBox.Y + 10, wBox.X + colW * 2, wBox.Bottom - 10);
+
+        DrawWeightCell(g, new Rectangle(wBox.X, wBox.Y, colW, wBox.Height), "PESO BRUTO", $"{_workingTicket.Bruto:N0} kg", Brushes.White, fLblW, fWeightBt, goldBrush);
+        DrawWeightCell(g, new Rectangle(wBox.X + colW, wBox.Y, colW, wBox.Height), _workingTicket.TaraRegistrada ? "PESO TARA (REG.)" : "PESO TARA", $"{_workingTicket.Tara:N0} kg", Brushes.White, fLblW, fWeightBt, goldBrush);
         using var neonBrush = new SolidBrush(AppTheme.LcdDigitOn);
-        DrawWeightCell(g, new Rectangle(wBox.X + colW * 2, wBox.Y, colW, wBox.Height), "PESO NETO", _isEnProceso ? "PENDIENTE" : $"{_workingTicket.Neto:N0} kg", neonBrush, fLblW, fBig, goldBrush);
-        y += 96;
+        DrawWeightCell(g, new Rectangle(wBox.X + colW * 2, wBox.Y, colW, wBox.Height), "PESO NETO", _isEnProceso ? "PENDIENTE" : $"{_workingTicket.Neto:N0} kg", neonBrush, fLblW, fWeightNeto, goldBrush);
+        y += 108;
 
         bool showTimes = _services.TicketFields.MostrarTiemposOperador;
         bool showObs = _services.TicketFields.MostrarObservaciones;
@@ -572,7 +710,7 @@ public sealed class TicketViewerDialog : Form
             if (showObs)
             {
                 string obs = $"{_workingTicket.Observacion1} {_workingTicket.Observacion2}".Trim();
-                g.DrawString($"Observaciones: {(string.IsNullOrWhiteSpace(obs) ? "-" : obs)}", fSub, textBrush, pad + 12, ty);
+                g.DrawString($"Observaciones: {(string.IsNullOrWhiteSpace(obs) ? "-" : obs)}", fSub, textBrush, new RectangleF(pad + 12, ty, w - pad * 2 - 24, 22), clipFmt);
             }
         }
     }
@@ -580,31 +718,76 @@ public sealed class TicketViewerDialog : Form
     private static void DrawWeightCell(Graphics g, Rectangle cell, string title, string val, Brush valBrush, Font fLbl, Font fVal, Brush lblBrush)
     {
         using var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        g.DrawString(title, fLbl, lblBrush, new Rectangle(cell.X, cell.Y + 8, cell.Width, 20), fmt);
-        g.DrawString(val, fVal, valBrush, new Rectangle(cell.X, cell.Y + 30, cell.Width, 42), fmt);
+        g.DrawString(title, fLbl, lblBrush, new Rectangle(cell.X, cell.Y + 8, cell.Width, 22), fmt);
+        g.DrawString(val, fVal, valBrush, new Rectangle(cell.X, cell.Y + 32, cell.Width, cell.Height - 40), fmt);
     }
 
-    private void PrintPreviewTicket()
+    private void PrintPreviewTicket(TicketFieldVisibility vis)
     {
-        short copies = (short)_numCopias.Value;
-        using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(
-            _workingTicket, BuildDisplayBascula(), _services.ConfigActual, copies, IconCatalog.GetCorporateLogo(), _services.TicketFields, _isEnProceso);
-        using var prev = new PrintPreviewDialog { Document = doc, Width = 860, Height = 660 };
-        prev.ShowDialog(this);
-    }
-
-    private void ExportTicketPdf()
-    {
-        using var sfd = new SaveFileDialog
+        try
         {
-            Filter = "Documento PDF|*.pdf",
-            FileName = $"Ticket_Folio_{_workingTicket.FolioPesaje}_{_workingTicket.Patente}.pdf"
-        };
-        if (sfd.ShowDialog(this) != DialogResult.OK) return;
+            short copies = (short)_numCopias.Value;
+            using PrintDocument doc = TicketPrinterService.CreateCommercialTicketDocument(
+                _workingTicket, BuildDisplayBascula(), _services.ConfigActual, copies, IconCatalog.GetCorporateLogo(), vis, _isEnProceso);
+            using var prev = new PrintPreviewDialog { Document = doc, Width = 880, Height = 680 };
+            prev.ShowDialog(this);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("TicketPrint", $"Error previsualizando/imprimiendo folio {_workingTicket.FolioPesaje}: {ex.Message}", ex);
+            MessageBox.Show(this, $"No se pudo generar vista previa:\r\n{ex.Message}", "Impresión", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
 
-        TicketPrinterService.ExportCommercialTicketToPdf(
-            sfd.FileName, _workingTicket, BuildDisplayBascula(), _services.ConfigActual, _isEnProceso, _services.TicketFields);
-        MessageBox.Show(this, $"Ticket exportado a PDF:\r\n{sfd.FileName}", "Exportar PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    private void ExportTicketPdf(TicketFieldVisibility vis)
+    {
+        try
+        {
+            using var sfd = new SaveFileDialog
+            {
+                Filter = "Documento PDF|*.pdf",
+                FileName = $"Ticket_Folio_{_workingTicket.FolioPesaje:D6}_{_workingTicket.Patente}.pdf"
+            };
+            if (sfd.ShowDialog(this) != DialogResult.OK) return;
+
+            TicketPrinterService.ExportCommercialTicketToPdf(
+                sfd.FileName, _workingTicket, BuildDisplayBascula(), _services.ConfigActual, _isEnProceso, vis);
+            MessageBox.Show(this, $"Ticket exportado a PDF:\r\n{sfd.FileName}", "Exportar PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("TicketPDF", $"Error exportando ticket PDF: {ex.Message}", ex);
+            MessageBox.Show(this, $"Error exportando a PDF:\r\n{ex.Message}", "Error PDF", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void ExportTicketXlsx(TicketFieldVisibility vis)
+    {
+        try
+        {
+            using var sfd = new SaveFileDialog
+            {
+                Filter = "Excel OpenXML|*.xlsx",
+                FileName = $"Ticket_Folio_{_workingTicket.FolioPesaje:D6}_{_workingTicket.Patente}.xlsx"
+            };
+            if (sfd.ShowDialog(this) != DialogResult.OK) return;
+
+            TicketPrinterService.ExportCommercialTicketToXlsx(
+                sfd.FileName, _workingTicket, BuildDisplayBascula(), _services.ConfigActual, _isEnProceso, vis);
+            MessageBox.Show(this, $"Ticket exportado a Excel (.xlsx):\r\n{sfd.FileName}", "Exportar Excel", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("TicketXLSX", $"Error exportando ticket XLSX: {ex.Message}", ex);
+            MessageBox.Show(this, $"Error exportando a Excel:\r\n{ex.Message}", "Error Excel", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void CopyRawText()
+    {
+        string raw = TicketPrinterService.BuildRawTicketText(_workingTicket, BuildDisplayBascula(), _services.ConfigActual, _services.TicketFields, _isEnProceso);
+        Clipboard.SetText(raw);
+        MessageBox.Show(this, "Detalle del ticket copiado al portapapeles.", "Copiar", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private async Task SaveInlineToDbAsync()
@@ -645,6 +828,7 @@ public sealed class TicketViewerDialog : Form
                     Tara = _workingTicket.Tara,
                     Chofer = _workingTicket.Chofer,
                     Observacion1 = _workingTicket.Observacion1,
+                    Fardos = _workingTicket.Fardos,
                     Transportista = _workingTicket.Transportista,
                     TipoPesaje = _workingTicket.TipoPesaje,
                     UsuarioIngreso = _workingTicket.UsuarioIngreso
@@ -658,10 +842,11 @@ public sealed class TicketViewerDialog : Form
             _pesaje = CloneTicket(_workingTicket);
             Modified = true;
             _ticketCanvas.Invalidate();
-            MessageBox.Show(this, $"Cambios del Folio #{_pesaje.FolioPesaje} guardados correctamente.", "Guardar Ticket", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, $"Cambios de {TicketCustomizationHelper.FormatFolioHeader(_pesaje.FolioPesaje)} guardados correctamente.", "Guardar Ticket", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
+            AppLogger.Error("TicketViewer", $"Error guardando edición en vivo folio {_workingTicket.FolioPesaje}: {ex.Message}", ex);
             MessageBox.Show(this, $"No se pudo guardar en BD:\r\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -751,6 +936,7 @@ public sealed class TicketViewerDialog : Form
         Traspaso = p.Traspaso,
         Observacion1 = p.Observacion1,
         Observacion2 = p.Observacion2,
+        Fardos = p.Fardos,
         Transportista = p.Transportista,
         NombreTransportista = p.NombreTransportista,
         TaraRegistrada = p.TaraRegistrada,

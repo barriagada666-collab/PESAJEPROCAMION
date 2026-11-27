@@ -1,7 +1,7 @@
-# Manual Funcional — PesajeProCamion v2.2
+# Manual Funcional — PesajeProCamion v2.3
 
 ## 1. Arranque, Inicio de Sesión y Servidor de BD Remota
-1. Al iniciar **PesajeProCamion**, se muestra la pantalla corporativa de carga (`v2.2.1`) y luego el **Inicio de Sesión**.
+1. Al iniciar **PesajeProCamion**, se muestra la pantalla corporativa de carga (`v2.3.0`) y luego el **Inicio de Sesión**.
 2. Cuenta administradora principal integrada: **`barriagada`** / **`Cambias0`** (puede escribirse en mayúsculas o minúsculas o seleccionarse del listado).
 3. Presione **Servidor BD** (en Login) o **Configurar Servidor BD...** (en la barra superior) para conectarse a un servidor local o remoto (ej.: `\\192.168.2.56\bdwm\placilla2\WMDBSPC.GDB`). Use **Probar Conexión**, **Aplicar (Sin Cerrar)** o **Guardar y Conectar**.
 
@@ -15,8 +15,8 @@
 
 ## 4. Visor Personalizable, Edición en Vivo, Pesos Manuales y División de Tickets
 1. **Personalización por Checkboxes (`TicketViewerDialog`)**:
-   - Al visualizar cualquier ticket, marque/desmarque libremente los checkboxes de **Campos Visibles del Ticket** (*Patente, Cliente, Producto, Origen, Destino, Transportista, Chofer, Guía Despacho, Fechas/Oper., Observaciones*) o use **Marcar Todos** / **Solo Básicos**. Las preferencias se guardan automáticamente y aplican al visor, impresión, PDF y copia de texto.
-   - La parte superior derecha muestra de forma destacada el **Tipo de Pesaje** (`RECEPCIÓN DE CARGA`, `DESPACHO DE CARGA`, `MOVIMIENTO INTERNO`).
+   - Al visualizar cualquier ticket, marque/desmarque libremente los checkboxes de **Campos Visibles del Ticket** (*Patente, Cliente, Producto, Origen, Destino, Transportista, Chofer, Guía Despacho, Cant. de Fardos, Estado, Fechas/Oper., Observaciones*) o use **Marcar Todos** / **Solo Básicos**. Las preferencias se guardan automáticamente y aplican al visor, vista previa, impresión, PDF, Excel `.xlsx` y copia de texto.
+   - El encabezado muestra **`N° Folio: xxxxxx`** en negrita y de forma destacada el **`Tipo de Pesaje: RECEPCIÓN DE CARGA / DESPACHO DE CARGA / MOVIMIENTO INTERNO`**, con **Bruto/Tara** en negrita y **Neto** en negrita con fuente mayor.
    - Edite en el panel derecho la información/pesos en tiempo real y presione **Guardar Cambios en BD** si desea persistirlos.
 2. **CRUD con Pesos Manuales (`TicketEditorDialog`)**:
    - Puede ingresar manualmente **Bruto**, **Tara** y **Neto** (activando o desactivando **Auto-calcular Neto**) sin conflictos de folio y respetando vehículos **En Proceso**.

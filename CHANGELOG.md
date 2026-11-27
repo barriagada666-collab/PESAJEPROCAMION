@@ -1,5 +1,22 @@
 # Historial de Cambios (CHANGELOG)
 
+## [2.3.0] - 2026-11-27
+### Agregado y Estandarizado
+- **Checkbox de Visibilidad para `Estado` y `Cantidad de Fardos` (`TicketViewerDialog`, `AppConfigStore`, `TicketFieldVisibility`)**:
+  - Nuevas opciones **Estado** y **Cant. de Fardos** en el menú de campos configurables del ticket, persistidas automáticamente en `appsettings.json` (`MostrarEstado`, `MostrarFardos`) y aplicadas de forma consistente al cargar la aplicación en visor gráfico, vista previa, impresión, exportación PDF, Excel (`.xlsx`) y copia de texto.
+  - Ocultar un campo solo afecta su presentación; nunca borra ni altera el valor almacenado en Firebird.
+- **Campo Numérico `Cantidad de Fardos` en Todo el Proyecto + Migración Idempotente**:
+  - Campo entero no negativo (`>= 0`) y checkbox de visualización sincronizado en Pesaje Comercial (`PesajeWorkspaceControl`), Creación/Edición Manual (`TicketEditorDialog`, `ModPesajeDialog`), Visor (`TicketViewerDialog`), Administración (`GestionPesajesControl`), Centro de Informes BI (`ReportsWorkspaceControl`) y Migrador ODS 9 (`Ods9Migrator`).
+  - Migración segura e idempotente (`FirebirdSchemaManager.EnsureAdditionalColumnsAsync`: `FARDOS INTEGER DEFAULT 0` en `DBTRANSITO`, `DBTRAN_ANUL`, `DBPESAJES`), preservando todos los registros históricos y manteniendo compatibilidad total (`-206`-free) frente a servidores Firebird remotos heredados sin columna `FARDOS`.
+  - En **Dividir Ticket (`SplitTicketDialog` / `WeighingRepository.SplitTicketAsync`)**, distribución proporcional explícita al Neto (`Fardos 1 + Fardos 2 = Original`) con confirmación obligatoria si el usuario ingresa una suma distinta.
+- **Jerarquía Visual Corporativa para `Bruto`, `Tara`, `Neto`, `N° Folio: xxxxxx` y `Tipo de Pesaje`**:
+  - Formato uniforme **`N° Folio: xxxxxx`** en negrita (preservando ceros iniciales) y **`Tipo de Pesaje: RECEPCIÓN DE CARGA` / `DESPACHO DE CARGA` / `MOVIMIENTO INTERNO`** destacado sin recortes en PDF, impresión, visor y listados.
+  - **Bruto** y **Tara** en negrita; **Neto** en negrita con tamaño de fuente mayor en formularios, visor, impresión, PDF y Excel.
+- **Servicio Centralizado de Menú Contextual Universal (`UniversalContextMenuService`)**:
+  - Estandarizado en todas las grillas, resultados de búsqueda y formularios aplicables (`PesajeWorkspaceControl`, `GestionPesajesControl`, `ReportsWorkspaceControl` — 6 grillas + panel de gráficos, `UsuariosForm`, `PesajeMopForm`, `ErrorLogViewerDialog`, `CatalogLookupDialog`, `CatalogCrudBaseForm` y `TicketViewerDialog`), ocultando dinámicamente acciones incompatibles o no autorizadas por RBAC.
+- **Exportación e Impresión Estandarizada a Página Completa (`StandardTableReport`, `PdfDocumentWriter`, `DataExporter`, `TicketPrinterService`)**:
+  - Títulos, criterios de filtros, KPIs, encabezados repetidos por página (`Print_Titles` en Excel y multipágina PDF/Impresión), totales al pie, formato numérico `#,##0` / `000000` y ajuste automático a página (`fitToPage`).
+
 ## [2.2.1] - 2026-11-27
 ### Corregido (Compatibilidad BD Remota Legacy ODS 9 / Firebird)
 - **`DBLOGSINGRESO` sin columna `ID_LOG` (error SQL `-206 Column unknown ID_LOG`)**: `DatabaseCapabilities` detecta `HasLogIngresoId`; tanto `RegistrarLogIngresoAsync` como `GetLogsIngresoAsync` omiten `ID_LOG` automáticamente en bases remotas legacy, eliminando el error al iniciar sesión e inspeccionar logs.

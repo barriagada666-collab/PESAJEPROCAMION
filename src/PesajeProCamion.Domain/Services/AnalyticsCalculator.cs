@@ -63,6 +63,7 @@ public static class AnalyticsCalculator
         long sumBruto = activos.Sum(x => (long)x.Bruto);
         long sumTara = activos.Sum(x => (long)x.Tara);
         long sumNeto = activos.Sum(x => (long)x.Neto);
+        long sumFardos = activos.Sum(x => (long)Math.Max(0, x.Fardos));
         int maxNeto = activos.Count > 0 ? activos.Max(x => x.Neto) : 0;
         int minNeto = activos.Count > 0 ? activos.Min(x => x.Neto) : 0;
         double avgNeto = activos.Count > 0 ? (double)sumNeto / activos.Count : 0.0;
@@ -112,7 +113,8 @@ public static class AnalyticsCalculator
             TopPatente: porPatente.FirstOrDefault() is { } tp ? $"{tp.Nombre} ({tp.ToneladasNetas:N1} t)" : "-",
             TopCliente: porCliente.FirstOrDefault() is { } tc ? $"{Truncate(tc.Nombre, 26)} ({tc.ToneladasNetas:N1} t)" : "-",
             TopProducto: porProducto.FirstOrDefault() is { } tpr ? $"{Truncate(tpr.Nombre, 26)} ({tpr.ToneladasNetas:N1} t)" : "-",
-            TopProveedorOrigen: porProveedor.FirstOrDefault() is { } tpv ? $"{Truncate(tpv.Nombre, 26)} ({tpv.ToneladasNetas:N1} t)" : "-");
+            TopProveedorOrigen: porProveedor.FirstOrDefault() is { } tpv ? $"{Truncate(tpv.Nombre, 26)} ({tpv.ToneladasNetas:N1} t)" : "-",
+            TotalFardos: sumFardos);
 
         return new AnalyticsResult
         {
@@ -165,6 +167,7 @@ public static class AnalyticsCalculator
                 long neto = g.Sum(x => (long)x.Neto);
                 long bruto = g.Sum(x => (long)x.Bruto);
                 long tara = g.Sum(x => (long)x.Tara);
+                long fardos = g.Sum(x => (long)Math.Max(0, x.Fardos));
                 int count = g.Count();
                 double pct = grandTotalNeto > 0 ? Math.Round(neto * 100.0 / grandTotalNeto, 2) : 0.0;
                 return new SegmentSummaryRow(
@@ -176,7 +179,8 @@ public static class AnalyticsCalculator
                     neto,
                     Math.Round(neto / 1000.0, 2),
                     count > 0 ? Math.Round((double)neto / count, 1) : 0.0,
-                    pct);
+                    pct,
+                    fardos);
             })
             .OrderByDescending(r => r.TotalNetoKg)
             .ThenByDescending(r => r.Tickets)

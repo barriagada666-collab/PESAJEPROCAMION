@@ -36,6 +36,7 @@ public sealed class RegistroTransito
     public int MaxBruto { get; set; }
     public string Chofer { get; set; } = string.Empty;
     public string Observacion1 { get; set; } = string.Empty;
+    public int Fardos { get; set; }
     public string Transportista { get; set; } = string.Empty;
     public TipoPesaje TipoPesaje { get; set; } = TipoPesaje.Recepcion;
     public string? SavedToServer { get; set; }
@@ -53,6 +54,7 @@ public sealed class RegistroTransitoAnulado
     public string HoraIngreso { get; set; } = string.Empty;
     public int Bruto { get; set; }
     public int Tara { get; set; }
+    public int Fardos { get; set; }
     public string Observacion { get; set; } = string.Empty;
     public DateTime FechaAnulacion { get; set; }
     public string HoraAnulacion { get; set; } = string.Empty;
@@ -94,6 +96,7 @@ public sealed class Pesaje
     public string? Traspaso { get; set; }
     public string Observacion1 { get; set; } = string.Empty;
     public string Observacion2 { get; set; } = string.Empty;
+    public int Fardos { get; set; }
     public string Transportista { get; set; } = string.Empty;
     public string NombreTransportista { get; set; } = string.Empty;
     public bool TaraRegistrada { get; set; }

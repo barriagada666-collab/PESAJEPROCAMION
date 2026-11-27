@@ -126,9 +126,9 @@ public sealed class DomainTests
     {
         List<Pesaje> dataset =
         [
-            new() { FolioPesaje = 1, FechaSalida = new DateTime(2026, 11, 20), Patente = "CHHW80", Cliente = "C1", NombreCliente = "CLIENTE ALFA", Origen = "O1", NombreOrigen = "PROVEEDOR NORTE", Producto = "P1", NombreProducto = "HDPE", Bruto = 30000, Tara = 10000, Neto = 20000, TipoPesaje = TipoPesaje.Recepcion },
-            new() { FolioPesaje = 2, FechaSalida = new DateTime(2026, 11, 21), Patente = "HKWK38", Cliente = "C2", NombreCliente = "CLIENTE BETA", Origen = "O2", NombreOrigen = "PROVEEDOR SUR", Producto = "P2", NombreProducto = "STRETCH", Bruto = 25000, Tara = 10000, Neto = 15000, TipoPesaje = TipoPesaje.Despacho },
-            new() { FolioPesaje = 3, FechaSalida = new DateTime(2026, 11, 22), Patente = "CHHW80", Cliente = "C1", NombreCliente = "CLIENTE ALFA", Origen = "O1", NombreOrigen = "PROVEEDOR NORTE", Producto = "P1", NombreProducto = "HDPE", Bruto = 18000, Tara = 8000, Neto = 10000, Anulado = true }
+            new() { FolioPesaje = 1, FechaSalida = new DateTime(2026, 11, 20), Patente = "CHHW80", Cliente = "C1", NombreCliente = "CLIENTE ALFA", Origen = "O1", NombreOrigen = "PROVEEDOR NORTE", Producto = "P1", NombreProducto = "HDPE", Bruto = 30000, Tara = 10000, Neto = 20000, Fardos = 51, TipoPesaje = TipoPesaje.Recepcion },
+            new() { FolioPesaje = 2, FechaSalida = new DateTime(2026, 11, 21), Patente = "HKWK38", Cliente = "C2", NombreCliente = "CLIENTE BETA", Origen = "O2", NombreOrigen = "PROVEEDOR SUR", Producto = "P2", NombreProducto = "STRETCH", Bruto = 25000, Tara = 10000, Neto = 15000, Fardos = 29, TipoPesaje = TipoPesaje.Despacho },
+            new() { FolioPesaje = 3, FechaSalida = new DateTime(2026, 11, 22), Patente = "CHHW80", Cliente = "C1", NombreCliente = "CLIENTE ALFA", Origen = "O1", NombreOrigen = "PROVEEDOR NORTE", Producto = "P1", NombreProducto = "HDPE", Bruto = 18000, Tara = 8000, Neto = 10000, Fardos = 99, Anulado = true }
         ];
 
         AnalyticsResult allActivos = AnalyticsCalculator.FilterAndAnalyze(dataset, new ReportFilterCriteria
@@ -139,6 +139,7 @@ public sealed class DomainTests
         });
         Assert.Equal(2, allActivos.Kpis.TotalTickets);
         Assert.Equal(35000, allActivos.Kpis.TotalNetoKg);
+        Assert.Equal(80, allActivos.Kpis.TotalFardos);
         Assert.Equal(35.0, allActivos.Kpis.ToneladasNetas);
         Assert.Equal(2, allActivos.PorCliente.Count);
         Assert.Equal(2, allActivos.PorProveedorOrigen.Count);
@@ -157,19 +158,31 @@ public sealed class DomainTests
         Assert.Equal(1, slicePat.Kpis.TicketsActivos);
         Assert.Equal(1, slicePat.Kpis.TicketsAnulados);
         Assert.Equal(20000, slicePat.Kpis.TotalNetoKg);
+        Assert.Equal(51, slicePat.Kpis.TotalFardos);
     }
 
     [Fact]
-    public void TicketCustomizationHelper_BadgeAndSplitWeights_AreConsistent()
+    public void TicketCustomizationHelper_BadgeFolioFardosAndSplit_AreConsistent()
     {
-        Assert.Equal("RECEPCIÓN DE CARGA", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Recepcion));
-        Assert.Equal("DESPACHO DE CARGA", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Despacho));
-        Assert.Equal("MOVIMIENTO INTERNO", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.MovimientoInterno));
+        Assert.Equal("Tipo de Pesaje: RECEPCIÓN DE CARGA", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Recepcion));
+        Assert.Equal("Tipo de Pesaje: DESPACHO DE CARGA", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Despacho));
+        Assert.Equal("Tipo de Pesaje: MOVIMIENTO INTERNO", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.MovimientoInterno));
         Assert.Contains("EN PROCESO", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Recepcion, enProceso: true));
-        Assert.StartsWith("ANULADO", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Despacho, anulado: true));
+        Assert.Contains("ANULADO", TicketCustomizationHelper.FormatTipoPesajeBadge(TipoPesaje.Despacho, anulado: true));
+        Assert.Equal("N° Folio: 002740", TicketCustomizationHelper.FormatFolioHeader(2740));
+        Assert.Equal("N° Folio: 000001", TicketCustomizationHelper.FormatFolioHeader(1));
 
         (int b1, int t1, int n1, int b2, int t2, int n2) = TicketCustomizationHelper.ComputeSplitWeights(20, 10, 10, 6);
         Assert.Equal((16, 10, 6, 14, 10, 4), (b1, t1, n1, b2, t2, n2));
+
+        (int f1, int f2) = TicketCustomizationHelper.ComputeSplitFardos(51, 6, 10);
+        Assert.Equal(51, f1 + f2);
+        Assert.Equal(31, f1);
+        Assert.Equal(20, f2);
+
+        Assert.Equal(51, TicketCustomizationHelper.ExtractFardosFromObservacion("GUIA 1333023 / P. ALTO / 51 FARDOS", null));
+        string merged = TicketCustomizationHelper.MergeFardosNote("OBS BASE", 24, 120);
+        Assert.Equal(24, TicketCustomizationHelper.ExtractFardosFromObservacion(null, merged));
 
         Assert.Throws<ArgumentOutOfRangeException>(() => TicketCustomizationHelper.ComputeSplitWeights(20, 10, 10, 10));
         Assert.Throws<ArgumentOutOfRangeException>(() => TicketCustomizationHelper.ComputeSplitWeights(11, 10, 1, 1));

@@ -5,6 +5,7 @@ using System.Windows.Forms;
 using PesajeProCamion.App.Services;
 using PesajeProCamion.App.UI.Dialogs;
 using PesajeProCamion.App.UI.Theme;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 using PesajeProCamion.Domain.Security;
 using PesajeProCamion.Hardware.Export;
@@ -28,6 +29,8 @@ public sealed class GestionPesajesControl : UserControl
     private readonly TextBox _txtBuscar = new();
     private readonly DataGridView _grid = new();
     private readonly Label _lblResumen = new();
+    private readonly CheckBox _chkVerFardos = new();
+    private DataGridViewTextBoxColumn? _colFardos;
 
     private List<TicketGridItem> _rows = [];
 
@@ -107,11 +110,26 @@ public sealed class GestionPesajesControl : UserControl
         ToolStripButton btnDividir = AppTheme.CreateToolButton(AppIcon.Split, "Dividir", "Dividir ticket en 2 folios asignando nuevo folio automático", AppTheme.NavyPrimary);
         ToolStripButton btnCompletar = AppTheme.CreateToolButton(AppIcon.Check, "Completar", "Cerrar ticket En Proceso registrando peso faltante", AppTheme.AccentEmerald);
         ToolStripButton btnAnular = AppTheme.CreateToolButton(AppIcon.Delete, "Anular", "Alternar anulación o retirar de tránsito", AppTheme.AccentDanger);
-        ToolStripButton btnImprimir = AppTheme.CreateToolButton(AppIcon.Print, "Imprimir", "Elegir copias, previsualizar e imprimir ticket", AppTheme.NavyPrimary);
-        ToolStripButton btnPdf = AppTheme.CreateToolButton(AppIcon.Pdf, "PDF", "Exportar listado actual a PDF", AppTheme.AccentDanger);
+        ToolStripButton btnImprimir = AppTheme.CreateToolButton(AppIcon.Print, "Imp. Ticket", "Elegir copias, previsualizar e imprimir ticket", AppTheme.NavyPrimary);
+        ToolStripButton btnImprimirLista = AppTheme.CreateToolButton(AppIcon.Print, "Imp. Lista", "Previsualizar e imprimir listado completo", AppTheme.NavyDark);
+        ToolStripButton btnPdf = AppTheme.CreateToolButton(AppIcon.Pdf, "PDF", "Exportar listado actual a PDF profesional", AppTheme.AccentDanger);
         ToolStripButton btnExcel = AppTheme.CreateToolButton(AppIcon.ExportExcel, "Excel", "Exportar listado a Excel (.xlsx)", AppTheme.AccentEmerald);
         ToolStripButton btnDbf = AppTheme.CreateToolButton(AppIcon.ExportDbf, "DBF", "Exportar tabla dBASE III (.dbf)", AppTheme.AccentAmber);
         ToolStripButton btnCsv = AppTheme.CreateToolButton(AppIcon.List, "CSV", "Exportar a CSV UTF-8", AppTheme.TextPrimary);
+
+        _chkVerFardos.Text = "Fardos";
+        _chkVerFardos.AutoSize = true;
+        _chkVerFardos.Checked = _services.TicketFields.MostrarFardos;
+        _chkVerFardos.Font = AppTheme.FontBodyBold;
+        _chkVerFardos.BackColor = AppTheme.SurfaceCard;
+        _chkVerFardos.Margin = new Padding(4, 3, 4, 2);
+        _chkVerFardos.CheckedChanged += (_, _) =>
+        {
+            _services.TicketFields.MostrarFardos = _chkVerFardos.Checked;
+            AppConfigStore.SaveTicketFields(_services.TicketFields);
+            if (_colFardos is not null) _colFardos.Visible = _chkVerFardos.Checked;
+        };
+        var hostFardos = new ToolStripControlHost(_chkVerFardos) { Margin = new Padding(6, 2, 2, 2) };
 
         btnConsultar.Click += async (_, _) => await RefreshAsync();
         btnNuevo.Click += async (_, _) => await CreateTicketAsync();
@@ -121,6 +139,7 @@ public sealed class GestionPesajesControl : UserControl
         btnCompletar.Click += async (_, _) => await CompleteInProcessAsync();
         btnAnular.Click += async (_, _) => await ToggleAnularSelectedAsync();
         btnImprimir.Click += (_, _) => PrintSelected();
+        btnImprimirLista.Click += (_, _) => PrintList();
         btnPdf.Click += (_, _) => ExportPdf();
         btnExcel.Click += (_, _) => ExportExcel();
         btnDbf.Click += (_, _) => ExportDbf();
@@ -129,7 +148,8 @@ public sealed class GestionPesajesControl : UserControl
         toolbar.Items.AddRange([
             btnConsultar, new ToolStripSeparator(),
             btnNuevo, btnVisualizar, btnModificar, btnDividir, btnCompletar, btnAnular, new ToolStripSeparator(),
-            btnImprimir, btnPdf, btnExcel, btnDbf, btnCsv
+            btnImprimir, btnImprimirLista, btnPdf, btnExcel, btnDbf, btnCsv, new ToolStripSeparator(),
+            hostFardos
         ]);
 
         var filterPanel = new Panel
@@ -183,30 +203,23 @@ public sealed class GestionPesajesControl : UserControl
 
         AppTheme.StyleDataGrid(_grid);
         _grid.Dock = DockStyle.Fill;
+        _colFardos = new DataGridViewTextBoxColumn { Name = "colFardos", HeaderText = "Fardos", FillWeight = 58, Visible = _services.TicketFields.MostrarFardos };
         _grid.Columns.AddRange([
-            new DataGridViewTextBoxColumn { HeaderText = "Folio", FillWeight = 58 },
-            new DataGridViewTextBoxColumn { HeaderText = "Fecha", FillWeight = 78 },
+            new DataGridViewTextBoxColumn { HeaderText = "N° Folio", FillWeight = 64 },
+            new DataGridViewTextBoxColumn { HeaderText = "Fecha", FillWeight = 76 },
             new DataGridViewTextBoxColumn { HeaderText = "Hora", FillWeight = 52 },
-            new DataGridViewTextBoxColumn { HeaderText = "Patente", FillWeight = 70 },
-            new DataGridViewTextBoxColumn { HeaderText = "Tipo", FillWeight = 82 },
-            new DataGridViewTextBoxColumn { HeaderText = "Cliente", FillWeight = 155 },
-            new DataGridViewTextBoxColumn { HeaderText = "Producto", FillWeight = 145 },
+            new DataGridViewTextBoxColumn { HeaderText = "Patente", FillWeight = 68 },
+            new DataGridViewTextBoxColumn { HeaderText = "Tipo de Pesaje", FillWeight = 115 },
+            new DataGridViewTextBoxColumn { HeaderText = "Cliente", FillWeight = 148 },
+            new DataGridViewTextBoxColumn { HeaderText = "Producto", FillWeight = 138 },
+            _colFardos,
             new DataGridViewTextBoxColumn { HeaderText = "Bruto (kg)", FillWeight = 76 },
             new DataGridViewTextBoxColumn { HeaderText = "Tara (kg)", FillWeight = 76 },
-            new DataGridViewTextBoxColumn { HeaderText = "Neto (kg)", FillWeight = 78 },
-            new DataGridViewTextBoxColumn { HeaderText = "Estado", FillWeight = 88 }
+            new DataGridViewTextBoxColumn { HeaderText = "Neto (kg)", FillWeight = 82 },
+            new DataGridViewTextBoxColumn { HeaderText = "Estado", FillWeight = 84 }
         ]);
         _grid.CellDoubleClick += async (_, e) => { if (e.RowIndex >= 0) await ViewSelectedTicketAsync(); };
-        _grid.CellMouseDown += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Right && e.RowIndex >= 0)
-            {
-                _grid.ClearSelection();
-                _grid.Rows[e.RowIndex].Selected = true;
-                _grid.CurrentCell = _grid.Rows[e.RowIndex].Cells[0];
-            }
-        };
-        _grid.ContextMenuStrip = BuildContextMenu();
+        AttachUniversalContextMenu();
 
         _lblResumen.Dock = DockStyle.Bottom;
         _lblResumen.Height = 30;
@@ -219,94 +232,227 @@ public sealed class GestionPesajesControl : UserControl
         Controls.AddRange([_grid, _lblResumen, filterPanel, toolbar]);
     }
 
-    private ContextMenuStrip BuildContextMenu()
+    private void AttachUniversalContextMenu()
     {
-        var cms = new ContextMenuStrip();
-        AppTheme.StyleContextMenu(cms);
+        static TicketGridItem? AsItem(object? sel) => sel as TicketGridItem;
 
-        var mView = new ToolStripMenuItem("Visualizar Ticket...", IconCatalog.Get(AppIcon.ViewTicket, 16, AppTheme.NavyPrimary));
-        mView.Click += async (_, _) => await ViewSelectedTicketAsync();
-
-        var mNew = new ToolStripMenuItem("Crear Nuevo Ticket...", IconCatalog.Get(AppIcon.Add, 16, AppTheme.AccentEmerald));
-        mNew.Click += async (_, _) => await CreateTicketAsync();
-
-        var mMod = new ToolStripMenuItem("Modificar Ticket Seleccionado...", IconCatalog.Get(AppIcon.EditTicket, 16, AppTheme.NavyDark));
-        mMod.Click += async (_, _) => await ModifySelectedAsync();
-
-        var mSplit = new ToolStripMenuItem("Dividir Ticket en 2...", IconCatalog.Get(AppIcon.Split, 16, AppTheme.NavyPrimary));
-        mSplit.Click += async (_, _) => await SplitSelectedAsync();
-
-        var mComplete = new ToolStripMenuItem("Completar Salida (En Proceso)...", IconCatalog.Get(AppIcon.Check, 16, AppTheme.AccentEmerald));
-        mComplete.Click += async (_, _) => await CompleteInProcessAsync();
-
-        var mDup = new ToolStripMenuItem("Duplicar como Nuevo Ticket...", IconCatalog.Get(AppIcon.Duplicate, 16, AppTheme.NavyPrimary));
-        mDup.Click += async (_, _) => await DuplicateSelectedAsync();
-
-        var mAnul = new ToolStripMenuItem("Anular / Reactivar Ticket", IconCatalog.Get(AppIcon.Delete, 16, AppTheme.AccentDanger));
-        mAnul.Click += async (_, _) => await ToggleAnularSelectedAsync();
-
-        var mPrint = new ToolStripMenuItem("Imprimir Ticket (Copias)...", IconCatalog.Get(AppIcon.Print, 16, AppTheme.NavyPrimary));
-        mPrint.Click += (_, _) => PrintSelected();
-
-        var mPdfTicket = new ToolStripMenuItem("Exportar Ticket a PDF...", IconCatalog.Get(AppIcon.Pdf, 16, AppTheme.AccentDanger));
-        mPdfTicket.Click += (_, _) => ExportSingleSelectedTicketPdf();
-
-        var mExportXlsx = new ToolStripMenuItem("Exportar Listado a Excel (.xlsx)", IconCatalog.Get(AppIcon.ExportExcel, 16, AppTheme.AccentEmerald));
-        mExportXlsx.Click += (_, _) => ExportExcel();
-
-        var mFilterPat = new ToolStripMenuItem("Filtrar por esta Patente", IconCatalog.Get(AppIcon.Filter, 16, AppTheme.NavyPrimary));
-        mFilterPat.Click += async (_, _) =>
-        {
-            if (GetSelected() is { } sel)
-            {
-                _txtBuscar.Text = sel.Pesaje.Patente;
-                await RefreshAsync();
-            }
-        };
-
-        var mCopyFolio = new ToolStripMenuItem("Copiar Folio al Portapapeles", IconCatalog.Get(AppIcon.Copy, 16, AppTheme.TextPrimary));
-        mCopyFolio.Click += (_, _) => { if (GetSelected() is { } sel) Clipboard.SetText(sel.Pesaje.FolioPesaje.ToString(CultureInfo.InvariantCulture)); };
-
-        var mCopyPat = new ToolStripMenuItem("Copiar Patente al Portapapeles", IconCatalog.Get(AppIcon.Truck, 16, AppTheme.TextPrimary));
-        mCopyPat.Click += (_, _) => { if (GetSelected() is { } sel && !string.IsNullOrEmpty(sel.Pesaje.Patente)) Clipboard.SetText(sel.Pesaje.Patente); };
-
-        var mRefresh = new ToolStripMenuItem("Actualizar Listado", IconCatalog.Get(AppIcon.Refresh, 16, AppTheme.NavyPrimary));
-        mRefresh.Click += async (_, _) => await RefreshAsync();
-
-        cms.Opening += (_, _) =>
-        {
-            TicketGridItem? sel = GetSelected();
-            bool hasSel = sel is not null;
-            bool isProc = sel?.EsEnProceso ?? false;
-            mView.Enabled = hasSel;
-            mMod.Enabled = hasSel && PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ModificarRegistro);
-            mSplit.Enabled = hasSel && !isProc && !(sel?.Pesaje.Anulado ?? true) && (sel?.Pesaje.Neto ?? 0) >= 2 &&
-                             PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro) &&
-                             PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ModificarRegistro);
-            mNew.Enabled = PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro);
-            mDup.Enabled = hasSel && PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro);
-            mComplete.Enabled = hasSel && isProc && PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro);
-            mAnul.Enabled = hasSel && PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AnularPesaje);
-            mPrint.Enabled = hasSel && PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ImprimirTicket);
-            mPdfTicket.Enabled = hasSel;
-            mFilterPat.Enabled = hasSel;
-            mCopyFolio.Enabled = hasSel;
-            mCopyPat.Enabled = hasSel;
-        };
-
-        cms.Items.AddRange([
-            mView, mNew, mMod, mSplit, mComplete, mDup, mAnul, new ToolStripSeparator(),
-            mPrint, mPdfTicket, mExportXlsx, new ToolStripSeparator(),
-            mFilterPat, mCopyFolio, mCopyPat, mRefresh
-        ]);
-        return cms;
+        UniversalContextMenuService.AttachToGrid(
+            _grid,
+            () => _services.UsuarioActual,
+            customActions:
+            [
+                new ContextActionSpec
+                {
+                    Text = "Visualizar Ticket...",
+                    Icon = AppIcon.ViewTicket,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 10,
+                    RequiresRow = true,
+                    IsVisible = sel => AsItem(sel) is not null,
+                    ExecuteAsync = _ => ViewSelectedTicketAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Crear Nuevo Ticket...",
+                    Icon = AppIcon.Add,
+                    IconTint = AppTheme.AccentEmerald,
+                    Group = 10,
+                    RequiredPermission = AccionAutorizacion.AgregarRegistro,
+                    ExecuteAsync = _ => CreateTicketAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Modificar Ticket Seleccionado...",
+                    Icon = AppIcon.EditTicket,
+                    IconTint = AppTheme.NavyDark,
+                    Group = 10,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.ModificarRegistro,
+                    IsVisible = sel => AsItem(sel) is not null,
+                    ExecuteAsync = _ => ModifySelectedAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Dividir Ticket en 2...",
+                    Icon = AppIcon.Split,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 10,
+                    RequiresRow = true,
+                    IsVisible = sel =>
+                    {
+                        TicketGridItem? item = AsItem(sel);
+                        return item is not null && !item.EsEnProceso && !item.Pesaje.Anulado && item.Pesaje.Neto >= 2 &&
+                               PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.AgregarRegistro) &&
+                               PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ModificarRegistro);
+                    },
+                    ExecuteAsync = _ => SplitSelectedAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Completar Salida (En Proceso)...",
+                    Icon = AppIcon.Check,
+                    IconTint = AppTheme.AccentEmerald,
+                    Group = 10,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.AgregarRegistro,
+                    IsVisible = sel => AsItem(sel)?.EsEnProceso == true,
+                    ExecuteAsync = _ => CompleteInProcessAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Duplicar como Nuevo Ticket...",
+                    Icon = AppIcon.Duplicate,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 10,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.AgregarRegistro,
+                    IsVisible = sel => AsItem(sel) is not null,
+                    ExecuteAsync = _ => DuplicateSelectedAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Anular / Reactivar Ticket",
+                    Icon = AppIcon.Delete,
+                    IconTint = AppTheme.AccentDanger,
+                    Group = 20,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.AnularPesaje,
+                    IsVisible = sel => AsItem(sel) is not null,
+                    ExecuteAsync = _ => ToggleAnularSelectedAsync()
+                },
+                new ContextActionSpec
+                {
+                    Text = "Imprimir Ticket (Copias)...",
+                    Icon = AppIcon.Print,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 30,
+                    RequiresRow = true,
+                    RequiredPermission = AccionAutorizacion.ImprimirTicket,
+                    IsVisible = sel => AsItem(sel) is not null,
+                    ExecuteAsync = _ => { PrintSelected(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Exportar Ticket a PDF...",
+                    Icon = AppIcon.Pdf,
+                    IconTint = AppTheme.AccentDanger,
+                    Group = 30,
+                    RequiresRow = true,
+                    IsVisible = sel => AsItem(sel) is not null,
+                    ExecuteAsync = _ => { ExportSingleSelectedTicketPdf(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Exportar Ticket a Excel (.xlsx)...",
+                    Icon = AppIcon.ExportExcel,
+                    IconTint = AppTheme.AccentEmerald,
+                    Group = 30,
+                    RequiresRow = true,
+                    IsVisible = sel => AsItem(sel) is not null,
+                    ExecuteAsync = _ => { ExportSingleSelectedTicketXlsx(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Imprimir / Vista Previa Listado...",
+                    Icon = AppIcon.Print,
+                    IconTint = AppTheme.NavyDark,
+                    Group = 40,
+                    RequiredPermission = AccionAutorizacion.ImprimirTicket,
+                    IsVisible = _ => _rows.Count > 0,
+                    ExecuteAsync = _ => { PrintList(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Exportar Listado Estándar PDF...",
+                    Icon = AppIcon.Pdf,
+                    IconTint = AppTheme.AccentDanger,
+                    Group = 40,
+                    IsVisible = _ => _rows.Count > 0,
+                    ExecuteAsync = _ => { ExportPdf(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Exportar Listado Estándar Excel (.xlsx)...",
+                    Icon = AppIcon.ExportExcel,
+                    IconTint = AppTheme.AccentEmerald,
+                    Group = 40,
+                    IsVisible = _ => _rows.Count > 0,
+                    ExecuteAsync = _ => { ExportExcel(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Exportar Informe Completo (Todos los Campos) PDF...",
+                    Icon = AppIcon.Pdf,
+                    IconTint = AppTheme.NavyDark,
+                    Group = 40,
+                    IsVisible = _ => _rows.Count > 0 && !_services.TicketFields.MostrarFardos,
+                    ExecuteAsync = _ => { ExportPdf(includeHiddenFields: true); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Exportar Informe Completo (Todos los Campos) Excel...",
+                    Icon = AppIcon.ExportExcel,
+                    IconTint = AppTheme.NavyDark,
+                    Group = 40,
+                    IsVisible = _ => _rows.Count > 0 && !_services.TicketFields.MostrarFardos,
+                    ExecuteAsync = _ => { ExportExcel(includeHiddenFields: true); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Exportar Listado CSV...",
+                    Icon = AppIcon.List,
+                    IconTint = AppTheme.TextPrimary,
+                    Group = 40,
+                    IsVisible = _ => _rows.Count > 0,
+                    ExecuteAsync = _ => { ExportCsv(); return Task.CompletedTask; }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Filtrar por esta Patente",
+                    Icon = AppIcon.Filter,
+                    IconTint = AppTheme.NavyPrimary,
+                    Group = 50,
+                    RequiresRow = true,
+                    IsVisible = sel => !string.IsNullOrWhiteSpace(AsItem(sel)?.Pesaje.Patente),
+                    ExecuteAsync = async sel =>
+                    {
+                        if (AsItem(sel) is { } s)
+                        {
+                            _txtBuscar.Text = s.Pesaje.Patente;
+                            await RefreshAsync();
+                        }
+                    }
+                },
+                new ContextActionSpec
+                {
+                    Text = "Copiar Folio (000000)",
+                    Icon = AppIcon.Copy,
+                    IconTint = AppTheme.TextPrimary,
+                    Group = 50,
+                    RequiresRow = true,
+                    IsVisible = sel => AsItem(sel) is not null,
+                    ExecuteAsync = sel =>
+                    {
+                        if (AsItem(sel) is { } s) Clipboard.SetText(s.Pesaje.FolioPesaje.ToString("D6", CultureInfo.InvariantCulture));
+                        return Task.CompletedTask;
+                    }
+                }
+            ],
+            exportTitle: "LISTADO DE GESTIÓN DE PESAJES",
+            sheetName: "Pesajes",
+            refreshAsync: RefreshAsync,
+            allowPrint: false,
+            allowExports: false);
     }
 
     private void RenderGrid()
     {
         _grid.Rows.Clear();
-        long sumBruto = 0, sumTara = 0, sumNeto = 0;
+        long sumBruto = 0, sumTara = 0, sumNeto = 0, sumFardos = 0;
         int activos = 0, enProceso = 0;
+
+        using var netoFont = new Font("Segoe UI", 9.75f, FontStyle.Bold);
+        Font gridNetoFont = new("Segoe UI", 9.75f, FontStyle.Bold);
 
         foreach (TicketGridItem item in _rows)
         {
@@ -316,28 +462,34 @@ public sealed class GestionPesajesControl : UserControl
             string hMostrar = item.EsEnProceso ? p.HoraIngreso : p.HoraSalida;
 
             int idx = _grid.Rows.Add(
-                p.FolioPesaje,
+                p.FolioPesaje.ToString("D6", CultureInfo.InvariantCulture),
                 fMostrar.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
                 hMostrar,
                 p.Patente,
-                p.TipoPesaje.ToString(),
+                TicketCustomizationHelper.FormatTipoPesajeNombre(p.TipoPesaje),
                 p.NombreCliente,
                 p.NombreProducto,
+                p.Fardos,
                 $"{p.Bruto:N0}",
                 $"{p.Tara:N0}",
                 $"{p.Neto:N0}",
                 estado);
-            _grid.Rows[idx].Tag = item;
+            DataGridViewRow row = _grid.Rows[idx];
+            row.Tag = item;
+            row.Cells[0].Style.Font = AppTheme.FontBodyBold;
+            row.Cells[8].Style.Font = AppTheme.FontBodyBold;
+            row.Cells[9].Style.Font = AppTheme.FontBodyBold;
+            row.Cells[10].Style.Font = gridNetoFont;
 
             if (item.EsEnProceso)
             {
                 enProceso++;
-                _grid.Rows[idx].DefaultCellStyle.ForeColor = AppTheme.AccentAmber;
-                _grid.Rows[idx].DefaultCellStyle.Font = AppTheme.FontBodyBold;
+                row.DefaultCellStyle.ForeColor = AppTheme.AccentAmber;
+                row.DefaultCellStyle.Font = AppTheme.FontBodyBold;
             }
             else if (p.Anulado)
             {
-                _grid.Rows[idx].DefaultCellStyle.ForeColor = AppTheme.AccentDanger;
+                row.DefaultCellStyle.ForeColor = AppTheme.AccentDanger;
             }
             else
             {
@@ -345,9 +497,14 @@ public sealed class GestionPesajesControl : UserControl
                 sumBruto += p.Bruto;
                 sumTara += p.Tara;
                 sumNeto += p.Neto;
+                sumFardos += p.Fardos;
+                row.Cells[10].Style.ForeColor = AppTheme.NavyDark;
             }
         }
-        _lblResumen.Text = $"  Registros: {_rows.Count:N0} ({activos:N0} activos, {enProceso:N0} en proceso)   |   Bruto: {sumBruto:N0} kg   |   Tara: {sumTara:N0} kg   |   Neto: {sumNeto:N0} kg ({sumNeto / 1000.0:N2} t)";
+        _chkVerFardos.Checked = _services.TicketFields.MostrarFardos;
+        if (_colFardos is not null) _colFardos.Visible = _services.TicketFields.MostrarFardos;
+        string fardosText = _services.TicketFields.MostrarFardos ? $"   |   Fardos: {sumFardos:N0}" : string.Empty;
+        _lblResumen.Text = $"  Registros: {_rows.Count:N0} ({activos:N0} activos, {enProceso:N0} en proceso){fardosText}   |   Bruto: {sumBruto:N0} kg   |   Tara: {sumTara:N0} kg   |   Neto: {sumNeto:N0} kg ({sumNeto / 1000.0:N2} t)";
     }
 
     private TicketGridItem? GetSelected() => _grid.CurrentRow?.Tag as TicketGridItem;
@@ -515,87 +672,168 @@ public sealed class GestionPesajesControl : UserControl
     {
         TicketGridItem? sel = GetSelected();
         if (sel is null) return;
-        using var sfd = new SaveFileDialog { Filter = "Documento PDF|*.pdf", FileName = $"Ticket_Folio_{sel.Pesaje.FolioPesaje}_{sel.Pesaje.Patente}.pdf" };
-        if (sfd.ShowDialog(this) != DialogResult.OK) return;
-        TicketPrinterService.ExportCommercialTicketToPdf(sfd.FileName, sel.Pesaje, _services.BasculaActual, _services.ConfigActual, sel.EsEnProceso, _services.TicketFields);
-        MessageBox.Show(this, $"Ticket exportado a PDF:\r\n{sfd.FileName}", "Exportar PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        try
+        {
+            using var sfd = new SaveFileDialog { Filter = "Documento PDF|*.pdf", FileName = $"Ticket_Folio_{sel.Pesaje.FolioPesaje:D6}_{sel.Pesaje.Patente}.pdf" };
+            if (sfd.ShowDialog(this) != DialogResult.OK) return;
+            TicketPrinterService.ExportCommercialTicketToPdf(sfd.FileName, sel.Pesaje, _services.BasculaActual, _services.ConfigActual, sel.EsEnProceso, _services.TicketFields);
+            MessageBox.Show(this, $"Ticket exportado a PDF:\r\n{sfd.FileName}", "Exportar PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("GestionPesajes.ExportTicketPdf", $"Error exportando ticket {sel.Pesaje.FolioPesaje:D6} a PDF", ex);
+            MessageBox.Show(this, $"Error exportando ticket a PDF:\r\n{ex.Message}", "Error PDF", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
-    private void ExportPdf()
+    private void ExportSingleSelectedTicketXlsx()
     {
-        using var sfd = new SaveFileDialog { Filter = "Documento PDF|*.pdf", FileName = $"Listado_Pesajes_{DateTime.Today:yyyyMMdd}.pdf" };
-        if (sfd.ShowDialog(this) != DialogResult.OK) return;
-        string[] headers = ["Folio", "Fecha", "Hora", "Patente", "Tipo", "Cliente", "Producto", "Bruto (kg)", "Tara (kg)", "Neto (kg)", "Estado"];
-        List<IReadOnlyList<object?>> rows = _rows.Select(x => (IReadOnlyList<object?>)
-        [
-            x.Pesaje.FolioPesaje,
-            (x.EsEnProceso ? x.Pesaje.FechaIngreso : x.Pesaje.FechaSalida).ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
-            x.EsEnProceso ? x.Pesaje.HoraIngreso : x.Pesaje.HoraSalida,
-            x.Pesaje.Patente, x.Pesaje.TipoPesaje.ToString(), x.Pesaje.NombreCliente, x.Pesaje.NombreProducto,
-            x.Pesaje.Bruto, x.Pesaje.Tara, x.Pesaje.Neto,
-            x.EsEnProceso ? "EN PROCESO" : (x.Pesaje.Anulado ? "ANULADO" : "ACTIVO")
-        ]).ToList();
-        long neto = _rows.Where(r => !r.EsEnProceso && !r.Pesaje.Anulado).Sum(r => (long)r.Pesaje.Neto);
-        DataExporter.ExportToPdf(
-            sfd.FileName,
-            "LISTADO DE GESTIÓN DE PESAJES",
-            $"Período: {_dtDesde.Value:dd/MM/yyyy} al {_dtHasta.Value:dd/MM/yyyy} | Filtro: {_cmbEstado.Text}",
-            [("Registros", _rows.Count.ToString("N0", CultureInfo.InvariantCulture)), ("Total Neto (kg)", $"{neto:N0} kg"), ("Toneladas", $"{neto / 1000.0:N2} t")],
-            headers,
-            rows);
-        MessageBox.Show(this, $"Archivo PDF generado correctamente:\r\n{sfd.FileName}", "Exportar PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        TicketGridItem? sel = GetSelected();
+        if (sel is null) return;
+        try
+        {
+            using var sfd = new SaveFileDialog { Filter = "Excel OpenXML|*.xlsx", FileName = $"Ticket_Folio_{sel.Pesaje.FolioPesaje:D6}_{sel.Pesaje.Patente}.xlsx" };
+            if (sfd.ShowDialog(this) != DialogResult.OK) return;
+            TicketPrinterService.ExportCommercialTicketToXlsx(sfd.FileName, sel.Pesaje, _services.BasculaActual, _services.ConfigActual, sel.EsEnProceso, _services.TicketFields);
+            MessageBox.Show(this, $"Ticket exportado a Excel:\r\n{sfd.FileName}", "Exportar Excel", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("GestionPesajes.ExportTicketXlsx", $"Error exportando ticket {sel.Pesaje.FolioPesaje:D6} a XLSX", ex);
+            MessageBox.Show(this, $"Error exportando ticket a Excel:\r\n{ex.Message}", "Error Excel", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
-    private void ExportExcel()
+    private StandardTableReport BuildStandardReport(bool includeHiddenFields = false)
     {
-        using var sfd = new SaveFileDialog { Filter = "Excel OpenXML|*.xlsx", FileName = $"Pesajes_{DateTime.Today:yyyyMMdd}.xlsx" };
-        if (sfd.ShowDialog(this) != DialogResult.OK) return;
-        string[] headers = ["Folio", "Fecha", "Hora", "Patente", "Acoplado", "Tipo", "Cliente", "Producto", "Bruto", "Tara", "Neto", "Estado"];
-        List<IReadOnlyList<object?>> rows = _rows.Select(x => (IReadOnlyList<object?>)
-        [
-            x.Pesaje.FolioPesaje, (x.EsEnProceso ? x.Pesaje.FechaIngreso : x.Pesaje.FechaSalida).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            x.EsEnProceso ? x.Pesaje.HoraIngreso : x.Pesaje.HoraSalida,
-            x.Pesaje.Patente, x.Pesaje.Acoplado, x.Pesaje.TipoPesaje.ToString(), x.Pesaje.NombreCliente, x.Pesaje.NombreProducto,
-            x.Pesaje.Bruto, x.Pesaje.Tara, x.Pesaje.Neto,
-            x.EsEnProceso ? "EN PROCESO" : (x.Pesaje.Anulado ? "ANULADO" : "ACTIVO")
-        ]).ToList();
-        DataExporter.ExportToXlsx(sfd.FileName, "Pesajes", headers, rows);
-        MessageBox.Show(this, $"Archivo Excel generado correctamente:\r\n{sfd.FileName}", "Exportar Excel", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        bool showFardos = _services.TicketFields.MostrarFardos || includeHiddenFields;
+        var headers = new List<string> { "N° Folio", "Fecha", "Hora", "Patente", "Tipo de Pesaje", "Cliente", "Producto" };
+        if (showFardos) headers.Add("Fardos");
+        headers.AddRange(["Bruto (kg)", "Tara (kg)", "Neto (kg)", "Estado"]);
+
+        int off = showFardos ? 1 : 0;
+        var rows = new List<IReadOnlyList<object?>>(_rows.Count);
+        long sumBruto = 0, sumTara = 0, sumNeto = 0, sumFardos = 0;
+        int activos = 0, enProceso = 0;
+
+        foreach (TicketGridItem x in _rows)
+        {
+            Pesaje p = x.Pesaje;
+            string est = x.EsEnProceso ? "EN PROCESO" : (p.Anulado ? "ANULADO" : "ACTIVO");
+            if (x.EsEnProceso) enProceso++;
+            else if (!p.Anulado)
+            {
+                activos++;
+                sumBruto += p.Bruto;
+                sumTara += p.Tara;
+                sumNeto += p.Neto;
+                sumFardos += p.Fardos;
+            }
+            var r = new List<object?>(headers.Count)
+            {
+                p.FolioPesaje,
+                (x.EsEnProceso ? p.FechaIngreso : p.FechaSalida).ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+                x.EsEnProceso ? p.HoraIngreso : p.HoraSalida,
+                p.Patente,
+                TicketCustomizationHelper.FormatTipoPesajeNombre(p.TipoPesaje),
+                p.NombreCliente,
+                p.NombreProducto
+            };
+            if (showFardos) r.Add(p.Fardos);
+            r.AddRange([p.Bruto, p.Tara, p.Neto, est]);
+            rows.Add(r);
+        }
+
+        var totals = new List<object?>(headers.Count)
+        {
+            "TOTAL", $"{activos:N0} act.", string.Empty, string.Empty, string.Empty, string.Empty, string.Empty
+        };
+        if (showFardos) totals.Add(sumFardos);
+        totals.AddRange([sumBruto, sumTara, sumNeto, $"{enProceso:N0} proc."]);
+
+        var kpis = new List<(string Label, string Value)>
+        {
+            ("Registros", $"{_rows.Count:N0} ({activos:N0} act.)")
+        };
+        if (showFardos) kpis.Add(("Fardos Activos", $"{sumFardos:N0}"));
+        kpis.Add(("Total Bruto", $"{sumBruto:N0} kg"));
+        kpis.Add(("Total Tara", $"{sumTara:N0} kg"));
+        kpis.Add(("Total Neto", $"{sumNeto:N0} kg ({sumNeto / 1000.0:N2} t)"));
+
+        return new StandardTableReport
+        {
+            Title = "LISTADO DE GESTIÓN DE PESAJES",
+            Subtitle = $"Período: {_dtDesde.Value:dd/MM/yyyy} al {_dtHasta.Value:dd/MM/yyyy} | Filtro: {_cmbEstado.Text}",
+            SheetName = "Pesajes",
+            Headers = headers,
+            Rows = rows,
+            TotalsRow = totals,
+            Kpis = kpis,
+            FolioColumnIndex = 0,
+            BoldHighlightColumnIndices = new HashSet<int> { 9 + off },
+            Landscape = true
+        };
     }
+
+    private void PrintList()
+    {
+        if (!PermissionService.EstaAutorizado(_services.UsuarioActual, AccionAutorizacion.ImprimirTicket))
+        {
+            MessageBox.Show(this, "No está autorizado para imprimir listados.", "Permisos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        UniversalContextMenuService.PrintStandardReportInteractive(this, BuildStandardReport());
+    }
+
+    private void ExportPdf(bool includeHiddenFields = false)
+        => UniversalContextMenuService.ExportReportToPdfInteractive(
+            this,
+            BuildStandardReport(includeHiddenFields),
+            $"Listado_Pesajes_{DateTime.Today:yyyyMMdd}.pdf");
+
+    private void ExportExcel(bool includeHiddenFields = false)
+        => UniversalContextMenuService.ExportReportToXlsxInteractive(
+            this,
+            BuildStandardReport(includeHiddenFields),
+            $"Pesajes_{DateTime.Today:yyyyMMdd}.xlsx");
 
     private void ExportDbf()
     {
-        using var sfd = new SaveFileDialog { Filter = "dBASE III DBF|*.dbf", FileName = $"EXPORT_{DateTime.Today:yyyyMMdd}.dbf" };
-        if (sfd.ShowDialog(this) != DialogResult.OK) return;
-        (string, int)[] cols =
-        [
-            ("FLPESAJE", 10), ("PATENTE", 8), ("PRODUCTO", 12), ("NMPROD", 40),
-            ("CLIENTE", 10), ("NMCLIENTE", 40), ("FECHASAL", 10), ("BRUTO", 10), ("TARA", 10), ("NETO", 10)
-        ];
-        List<IReadOnlyList<string?>> rows = _rows.Select(x => (IReadOnlyList<string?>)
-        [
-            x.Pesaje.FolioPesaje.ToString(CultureInfo.InvariantCulture), x.Pesaje.Patente, x.Pesaje.Producto, x.Pesaje.NombreProducto,
-            x.Pesaje.Cliente, x.Pesaje.NombreCliente, x.Pesaje.FechaSalida.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
-            x.Pesaje.Bruto.ToString(CultureInfo.InvariantCulture), x.Pesaje.Tara.ToString(CultureInfo.InvariantCulture), x.Pesaje.Neto.ToString(CultureInfo.InvariantCulture)
-        ]).ToList();
-        DataExporter.ExportToDbf(sfd.FileName, cols, rows);
-        MessageBox.Show(this, $"Archivo DBF generado correctamente:\r\n{sfd.FileName}", "Exportar DBF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        try
+        {
+            using var sfd = new SaveFileDialog { Filter = "dBASE III DBF|*.dbf", FileName = $"EXPORT_{DateTime.Today:yyyyMMdd}.dbf" };
+            if (sfd.ShowDialog(this) != DialogResult.OK) return;
+            var cols = new List<(string, int)>
+            {
+                ("FLPESAJE", 10), ("PATENTE", 8), ("PRODUCTO", 12), ("NMPROD", 40),
+                ("CLIENTE", 10), ("NMCLIENTE", 40), ("FECHASAL", 10), ("BRUTO", 10), ("TARA", 10), ("NETO", 10)
+            };
+            bool includeFardos = _services.TicketFields.MostrarFardos;
+            if (includeFardos) cols.Add(("FARDOS", 10));
+            List<IReadOnlyList<string?>> rows = _rows.Select(x =>
+            {
+                var r = new List<string?>
+                {
+                    x.Pesaje.FolioPesaje.ToString("D6", CultureInfo.InvariantCulture), x.Pesaje.Patente, x.Pesaje.Producto, x.Pesaje.NombreProducto,
+                    x.Pesaje.Cliente, x.Pesaje.NombreCliente, x.Pesaje.FechaSalida.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+                    x.Pesaje.Bruto.ToString(CultureInfo.InvariantCulture), x.Pesaje.Tara.ToString(CultureInfo.InvariantCulture), x.Pesaje.Neto.ToString(CultureInfo.InvariantCulture)
+                };
+                if (includeFardos) r.Add(x.Pesaje.Fardos.ToString(CultureInfo.InvariantCulture));
+                return (IReadOnlyList<string?>)r;
+            }).ToList();
+            DataExporter.ExportToDbf(sfd.FileName, cols, rows);
+            MessageBox.Show(this, $"Archivo DBF generado correctamente:\r\n{sfd.FileName}", "Exportar DBF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("GestionPesajes.ExportDbf", "Error exportando listado DBF", ex);
+            MessageBox.Show(this, $"Error exportando a DBF:\r\n{ex.Message}", "Error DBF", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private void ExportCsv()
     {
-        using var sfd = new SaveFileDialog { Filter = "CSV UTF-8|*.csv", FileName = $"Pesajes_{DateTime.Today:yyyyMMdd}.csv" };
-        if (sfd.ShowDialog(this) != DialogResult.OK) return;
-        string[] headers = ["Folio", "Fecha", "Hora", "Patente", "Cliente", "Producto", "Bruto", "Tara", "Neto", "Estado"];
-        List<IReadOnlyList<string?>> rows = _rows.Select(x => (IReadOnlyList<string?>)
-        [
-            x.Pesaje.FolioPesaje.ToString(CultureInfo.InvariantCulture), x.Pesaje.FechaSalida.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            x.Pesaje.HoraSalida, x.Pesaje.Patente, x.Pesaje.NombreCliente, x.Pesaje.NombreProducto,
-            x.Pesaje.Bruto.ToString(CultureInfo.InvariantCulture), x.Pesaje.Tara.ToString(CultureInfo.InvariantCulture),
-            x.Pesaje.Neto.ToString(CultureInfo.InvariantCulture),
-            x.EsEnProceso ? "EN PROCESO" : (x.Pesaje.Anulado ? "ANULADO" : "ACTIVO")
-        ]).ToList();
-        DataExporter.ExportToCsv(sfd.FileName, headers, rows);
-        MessageBox.Show(this, $"Archivo CSV generado:\r\n{sfd.FileName}", "Exportar CSV", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        StandardTableReport rep = BuildStandardReport();
+        UniversalContextMenuService.ExportReportToCsvInteractive(this, rep, $"Pesajes_{DateTime.Today:yyyyMMdd}.csv");
     }
 }

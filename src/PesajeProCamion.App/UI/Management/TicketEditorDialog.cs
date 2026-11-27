@@ -5,6 +5,7 @@ using PesajeProCamion.App.Services;
 using PesajeProCamion.App.UI.Dialogs;
 using PesajeProCamion.App.UI.Theme;
 using PesajeProCamion.Data.Repositories;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 using PesajeProCamion.Domain.Security;
 using PesajeProCamion.Domain.Services;
@@ -47,6 +48,9 @@ public sealed class TicketEditorDialog : Form
     private readonly TextBox _txtChofer = new() { MaxLength = 35 };
     private readonly TextBox _txtGuia = new() { MaxLength = 50, CharacterCasing = CharacterCasing.Upper };
     private readonly NumericUpDown _numNetoInf = new() { Maximum = 200_000, ThousandsSeparator = true };
+    private readonly NumericUpDown _numFardos = new() { Minimum = 0, Maximum = 999_999, ThousandsSeparator = true };
+    private readonly CheckBox _chkMostrarFardos = new();
+    private readonly Label _lblFardos = new();
 
     private readonly DateTimePicker _dtFechaIng = new() { Format = DateTimePickerFormat.Short };
     private readonly TextBox _txtHoraIng = new() { MaxLength = 5 };
@@ -80,12 +84,12 @@ public sealed class TicketEditorDialog : Form
         Text = mode switch
         {
             TicketEditorMode.CreateNew => "Crear Nuevo Ticket de Pesaje",
-            TicketEditorMode.EditInProcess => $"Modificar Ticket EN PROCESO #{_pesaje.FolioPesaje}",
-            TicketEditorMode.CompleteInProcess => $"Completar Salida — Ticket En Proceso #{_pesaje.FolioPesaje}",
-            _ => $"Modificar Ticket Folio #{_pesaje.FolioPesaje}"
+            TicketEditorMode.EditInProcess => $"Modificar Ticket EN PROCESO — {TicketCustomizationHelper.FormatFolioHeader(_pesaje.FolioPesaje)}",
+            TicketEditorMode.CompleteInProcess => $"Completar Salida — {TicketCustomizationHelper.FormatFolioHeader(_pesaje.FolioPesaje)}",
+            _ => $"Modificar Ticket — {TicketCustomizationHelper.FormatFolioHeader(_pesaje.FolioPesaje)}"
         };
 
-        AppTheme.ConfigureResponsiveDialog(this, 820, 640, 740, 580, resizable: true);
+        AppTheme.ConfigureResponsiveDialog(this, 830, 670, 750, 600, resizable: true);
         BuildUi();
         BindFields();
         Load += async (_, _) => await InitializeFolioStateAsync();
@@ -118,6 +122,7 @@ public sealed class TicketEditorDialog : Form
         MaxBruto = tr.MaxBruto,
         Chofer = tr.Chofer,
         Observacion1 = tr.Observacion1,
+        Fardos = tr.Fardos,
         Transportista = tr.Transportista,
         TipoPesaje = tr.TipoPesaje,
         UsuarioIngreso = tr.UsuarioIngreso
@@ -216,7 +221,7 @@ public sealed class TicketEditorDialog : Form
         grpFolio.Controls.AddRange([_chkAutoFolio, _numFolio, btnCheckFolio, _chkCrearEnProceso, _lblFolioStatus]);
 
         // Sección Datos Comerciales y Vehículo
-        var grpData = new Panel { Dock = DockStyle.Top, Height = 408, BackColor = AppTheme.SurfaceCard, BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(12), Margin = new Padding(0, 10, 0, 0) };
+        var grpData = new Panel { Dock = DockStyle.Top, Height = 420, BackColor = AppTheme.SurfaceCard, BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(12), Margin = new Padding(0, 10, 0, 0) };
         _cmbTipo.Items.AddRange(["1 - Recepción", "2 - Despacho", "3 - Mov. Interno"]);
 
         int y = 14;
@@ -244,8 +249,15 @@ public sealed class TicketEditorDialog : Form
         AddLookupButton(grpData, 684, y - 2, "Buscar chofer", async () => await PickChoferAsync());
 
         y += 36;
-        AddRowControl(grpData, "Guía Despacho", _txtGuia, 14, y, 180);
-        AddRowControl(grpData, "Neto Inf. (kg)", _numNetoInf, 360, y, 130);
+        AddRowControl(grpData, "Guía Despacho", _txtGuia, 14, y, 160);
+        AddRowControl(grpData, "Neto Inf. (kg)", _numNetoInf, 286, y, 100);
+        _lblFardos.Text = "Cant. Fardos";
+        _lblFardos.Location = new Point(498, y + 4);
+        _lblFardos.AutoSize = true;
+        _lblFardos.Font = new Font("Segoe UI", 8.75f, FontStyle.Bold);
+        _numFardos.Location = new Point(596, y);
+        _numFardos.Width = 104;
+        grpData.Controls.AddRange([_lblFardos, _numFardos]);
 
         y += 38;
         AddRowControl(grpData, "Fecha Ing.", _dtFechaIng, 14, y, 102);
@@ -259,6 +271,11 @@ public sealed class TicketEditorDialog : Form
         }
 
         y += 40;
+        _numBruto.Font = new Font("Segoe UI", 9.75f, FontStyle.Bold);
+        _numTara.Font = new Font("Segoe UI", 9.75f, FontStyle.Bold);
+        _numNeto.Font = new Font("Segoe UI", 11.25f, FontStyle.Bold);
+        _numNeto.ForeColor = AppTheme.NavyDark;
+        _numNeto.BackColor = Color.FromArgb(236, 246, 255);
         AddRowControl(grpData, "Bruto (kg) *", _numBruto, 14, y, 120);
         AddRowControl(grpData, "Tara (kg) *", _numTara, 250, y, 120);
         AddRowControl(grpData, "Neto (kg) *", _numNeto, 486, y, 130);
@@ -272,17 +289,29 @@ public sealed class TicketEditorDialog : Form
             }
         };
 
-        y += 36;
-        _chkAutoNeto.Text = "Auto-calcular Neto (|Bruto - Tara|)";
-        _chkAutoNeto.Location = new Point(114, y);
+        y += 40;
+        _chkAutoNeto.Text = "Auto-calcular Neto";
+        _chkAutoNeto.Location = new Point(14, y);
         _chkAutoNeto.AutoSize = true;
         _chkAutoNeto.Checked = true;
         _chkAutoNeto.CheckedChanged += (_, _) => { if (_chkAutoNeto.Checked) RecalcNeto(); };
-        _chkTaraReg.Text = "Tara Registrada"; _chkTaraReg.Location = new Point(360, y); _chkTaraReg.AutoSize = true;
-        _chkAnulado.Text = "Ticket Anulado"; _chkAnulado.Location = new Point(510, y); _chkAnulado.AutoSize = true;
+        _chkTaraReg.Text = "Tara Registrada"; _chkTaraReg.Location = new Point(176, y); _chkTaraReg.AutoSize = true;
+        _chkAnulado.Text = "Ticket Anulado"; _chkAnulado.Location = new Point(314, y); _chkAnulado.AutoSize = true;
         _chkAnulado.Visible = _mode is TicketEditorMode.CreateNew or TicketEditorMode.EditHistorical;
         _chkAnulado.CheckedChanged += (_, _) => RecalcNeto();
-        grpData.Controls.AddRange([_chkAutoNeto, _chkTaraReg, _chkAnulado]);
+        _chkMostrarFardos.Text = "Mostrar Fardos";
+        _chkMostrarFardos.Location = new Point(450, y);
+        _chkMostrarFardos.AutoSize = true;
+        _chkMostrarFardos.Font = new Font("Segoe UI", 8.75f, FontStyle.Bold);
+        _tt.SetToolTip(_chkMostrarFardos, "Muestra u oculta el campo Cantidad de Fardos sin borrar el valor almacenado en BD.");
+        _chkMostrarFardos.CheckedChanged += (_, _) =>
+        {
+            _services.TicketFields.MostrarFardos = _chkMostrarFardos.Checked;
+            AppConfigStore.SaveTicketFields(_services.TicketFields);
+            _lblFardos.Visible = _chkMostrarFardos.Checked;
+            _numFardos.Visible = _chkMostrarFardos.Checked;
+        };
+        grpData.Controls.AddRange([_chkAutoNeto, _chkTaraReg, _chkAnulado, _chkMostrarFardos]);
 
         y += 32;
         AddRowControl(grpData, "Observación 1", _txtObs1, 14, y, 610);
@@ -327,6 +356,10 @@ public sealed class TicketEditorDialog : Form
         _txtChofer.Text = _pesaje.Chofer;
         _txtGuia.Text = _pesaje.GuiaDespacho;
         _numNetoInf.Value = Math.Clamp(_pesaje.NetoInformado, 0, 200_000);
+        _numFardos.Value = Math.Clamp(_pesaje.Fardos, 0, 999_999);
+        _chkMostrarFardos.Checked = _services.TicketFields.MostrarFardos;
+        _lblFardos.Visible = _chkMostrarFardos.Checked;
+        _numFardos.Visible = _chkMostrarFardos.Checked;
         _dtFechaIng.Value = _pesaje.FechaIngreso > DateTime.MinValue ? _pesaje.FechaIngreso : DateTime.Today;
         _txtHoraIng.Text = string.IsNullOrWhiteSpace(_pesaje.HoraIngreso) ? DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture) : _pesaje.HoraIngreso;
         _dtFechaSal.Value = _pesaje.FechaSalida > DateTime.MinValue ? _pesaje.FechaSalida : DateTime.Today;
@@ -394,11 +427,12 @@ public sealed class TicketEditorDialog : Form
     {
         if (_mode != TicketEditorMode.CreateNew)
         {
+            string folioTxt = TicketCustomizationHelper.FormatFolioHeader(_pesaje.FolioPesaje);
             _lblFolioStatus.Text = _mode == TicketEditorMode.EditInProcess
-                ? $"Folio #{_pesaje.FolioPesaje} reservado EN PROCESO (se edita sin alterar ni liberar el folio en tránsito)."
+                ? $"{folioTxt} reservado EN PROCESO (se edita sin alterar ni liberar el folio en tránsito)."
                 : (_mode == TicketEditorMode.CompleteInProcess
-                    ? $"Folio #{_pesaje.FolioPesaje} se cerrará conservando su número asignado de tránsito."
-                    : $"Folio histórico #{_pesaje.FolioPesaje} bloqueado para edición segura (cero colisión).");
+                    ? $"{folioTxt} se cerrará conservando su número asignado de tránsito."
+                    : $"{folioTxt} histórico bloqueado para edición segura (cero colisión).");
             _lblFolioStatus.ForeColor = AppTheme.NavyPrimary;
             return true;
         }
@@ -407,7 +441,7 @@ public sealed class TicketEditorDialog : Form
         {
             int nextFree = await _services.Weighing.GetNextSuggestedFolioAsync();
             _numFolio.Value = Math.Clamp(nextFree, 1, 99_999_999);
-            _lblFolioStatus.Text = $"Asignación automática libre de conflicto — Próximo folio garantizado: #{nextFree} (respeta histórico y en proceso).";
+            _lblFolioStatus.Text = $"Asignación automática libre de conflicto — Próximo garantizado: {TicketCustomizationHelper.FormatFolioHeader(nextFree)} (respeta histórico y en proceso).";
             _lblFolioStatus.ForeColor = AppTheme.AccentEmerald;
             return true;
         }
@@ -466,6 +500,7 @@ public sealed class TicketEditorDialog : Form
         _pesaje.Chofer = _txtChofer.Text.Trim();
         _pesaje.GuiaDespacho = _txtGuia.Text.Trim();
         _pesaje.NetoInformado = (int)_numNetoInf.Value;
+        _pesaje.Fardos = (int)_numFardos.Value;
         _pesaje.FechaIngreso = _dtFechaIng.Value.Date;
         _pesaje.HoraIngreso = string.IsNullOrWhiteSpace(_txtHoraIng.Text) ? DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture) : _txtHoraIng.Text.Trim();
         _pesaje.FechaSalida = _dtFechaSal.Value.Date;
@@ -511,6 +546,7 @@ public sealed class TicketEditorDialog : Form
                         Tara = _pesaje.Tara,
                         Chofer = _pesaje.Chofer,
                         Observacion1 = _pesaje.Observacion1,
+                        Fardos = _pesaje.Fardos,
                         Transportista = _pesaje.Transportista,
                         TipoPesaje = _pesaje.TipoPesaje,
                         UsuarioIngreso = _pesaje.UsuarioIngreso
@@ -528,6 +564,7 @@ public sealed class TicketEditorDialog : Form
         }
         catch (Exception ex)
         {
+            AppLogger.Error("TicketEditorDialog.SaveAsync", $"Error guardando ticket {_pesaje.FolioPesaje:D6}", ex);
             MessageBox.Show(this, $"Error guardando ticket:\r\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -538,7 +575,7 @@ public sealed class TicketEditorDialog : Form
         FolioPesajeMop = p.FolioPesajeMop, Producto = p.Producto, NombreProducto = p.NombreProducto,
         Cliente = p.Cliente, NombreCliente = p.NombreCliente, Origen = p.Origen, NombreOrigen = p.NombreOrigen,
         Destino = p.Destino, NombreDestino = p.NombreDestino, GuiaDespacho = p.GuiaDespacho,
-        NetoInformado = p.NetoInformado, FechaIngreso = p.FechaIngreso, HoraIngreso = p.HoraIngreso,
+        NetoInformado = p.NetoInformado, Fardos = p.Fardos, FechaIngreso = p.FechaIngreso, HoraIngreso = p.HoraIngreso,
         FechaSalida = p.FechaSalida, HoraSalida = p.HoraSalida, FechaModificacion = p.FechaModificacion,
         HoraModificacion = p.HoraModificacion, Bruto = p.Bruto, Tara = p.Tara, Neto = p.Neto,
         TipoMop = p.TipoMop, Largo = p.Largo, MaxBruto = p.MaxBruto, EstadoMop = p.EstadoMop,

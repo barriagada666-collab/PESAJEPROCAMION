@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Windows.Forms;
 using PesajeProCamion.App.Services;
 using PesajeProCamion.App.UI.Theme;
+using PesajeProCamion.Domain.Diagnostics;
 using PesajeProCamion.Domain.Entities;
 using PesajeProCamion.Domain.Security;
 using PesajeProCamion.Domain.Services;
@@ -28,6 +29,9 @@ public sealed class ModPesajeDialog : Form
     private readonly TextBox _txtChofer = new() { MaxLength = 35 };
     private readonly TextBox _txtGuia = new() { MaxLength = 12, CharacterCasing = CharacterCasing.Upper };
     private readonly NumericUpDown _numNetoInf = new() { Maximum = 200_000, ThousandsSeparator = true };
+    private readonly NumericUpDown _numFardos = new() { Minimum = 0, Maximum = 999_999, ThousandsSeparator = true };
+    private readonly CheckBox _chkMostrarFardos = new();
+    private readonly Label _lblFardos = new() { Text = "Cant. Fardos", AutoSize = true, Font = new Font("Segoe UI", 8.75f, FontStyle.Bold) };
     private readonly NumericUpDown _numBruto = new() { Maximum = 200_000, ThousandsSeparator = true };
     private readonly NumericUpDown _numTara = new() { Maximum = 200_000, ThousandsSeparator = true };
     private readonly NumericUpDown _numNeto = new() { Maximum = 200_000, ThousandsSeparator = true, ReadOnly = true };
@@ -41,8 +45,8 @@ public sealed class ModPesajeDialog : Form
         _services = services;
         _pesaje = pesaje;
 
-        Text = $"Modificar Pesaje Folio #{pesaje.FolioPesaje}{(pesaje.Anulado ? " [ANULADO]" : string.Empty)}";
-        ClientSize = new Size(640, 480);
+        Text = $"Modificar Pesaje — {TicketCustomizationHelper.FormatFolioHeader(pesaje.FolioPesaje)}{(pesaje.Anulado ? " [ANULADO]" : string.Empty)}";
+        ClientSize = new Size(660, 520);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -76,7 +80,29 @@ public sealed class ModPesajeDialog : Form
         AddField("Guía Despacho", _txtGuia, 20, y, 140);
         AddField("Neto Inf. (kg)", _numNetoInf, 330, y, 130);
 
+        y += 36;
+        _lblFardos.Location = new Point(20, y + 3);
+        _numFardos.Location = new Point(118, y);
+        _numFardos.Width = 115;
+        _chkMostrarFardos.Text = "Mostrar Fardos (sin borrar dato en BD)";
+        _chkMostrarFardos.Location = new Point(250, y + 2);
+        _chkMostrarFardos.AutoSize = true;
+        _chkMostrarFardos.Font = new Font("Segoe UI", 8.75f, FontStyle.Bold);
+        _chkMostrarFardos.CheckedChanged += (_, _) =>
+        {
+            _services.TicketFields.MostrarFardos = _chkMostrarFardos.Checked;
+            AppConfigStore.SaveTicketFields(_services.TicketFields);
+            _lblFardos.Visible = _chkMostrarFardos.Checked;
+            _numFardos.Visible = _chkMostrarFardos.Checked;
+        };
+        Controls.AddRange([_lblFardos, _numFardos, _chkMostrarFardos]);
+
         y += 40;
+        _numBruto.Font = new Font("Segoe UI", 9.75f, FontStyle.Bold);
+        _numTara.Font = new Font("Segoe UI", 9.75f, FontStyle.Bold);
+        _numNeto.Font = new Font("Segoe UI", 11.25f, FontStyle.Bold);
+        _numNeto.ForeColor = AppTheme.NavyDark;
+        _numNeto.BackColor = Color.FromArgb(236, 246, 255);
         AddField("Peso Bruto (kg)", _numBruto, 20, y, 125);
         AddField("Peso Tara (kg)", _numTara, 230, y, 125);
         AddField("Peso Neto (kg)", _numNeto, 435, y, 135);
@@ -145,6 +171,10 @@ public sealed class ModPesajeDialog : Form
         _txtChofer.Text = _pesaje.Chofer;
         _txtGuia.Text = _pesaje.GuiaDespacho;
         _numNetoInf.Value = Math.Clamp(_pesaje.NetoInformado, 0, 200_000);
+        _numFardos.Value = Math.Clamp(_pesaje.Fardos, 0, 999_999);
+        _chkMostrarFardos.Checked = _services.TicketFields.MostrarFardos;
+        _lblFardos.Visible = _chkMostrarFardos.Checked;
+        _numFardos.Visible = _chkMostrarFardos.Checked;
         _numBruto.Value = Math.Clamp(_pesaje.Bruto, 0, 200_000);
         _numTara.Value = Math.Clamp(_pesaje.Tara, 0, 200_000);
         _numNeto.Value = Math.Clamp(_pesaje.Neto, 0, 200_000);
@@ -175,14 +205,23 @@ public sealed class ModPesajeDialog : Form
         _pesaje.Chofer = _txtChofer.Text.Trim();
         _pesaje.GuiaDespacho = _txtGuia.Text.Trim();
         _pesaje.NetoInformado = (int)_numNetoInf.Value;
+        _pesaje.Fardos = (int)_numFardos.Value;
         _pesaje.Bruto = (int)_numBruto.Value;
         _pesaje.Tara = (int)_numTara.Value;
         _pesaje.Observacion1 = _txtObs1.Text.Trim();
         _pesaje.Observacion2 = _txtObs2.Text.Trim();
 
-        await _services.Weighing.ModificarPesajeAsync(_pesaje, _services.UsuarioActual?.Id ?? 0);
-        DialogResult = DialogResult.OK;
-        Close();
+        try
+        {
+            await _services.Weighing.ModificarPesajeAsync(_pesaje, _services.UsuarioActual?.Id ?? 0);
+            DialogResult = DialogResult.OK;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("ModPesajeDialog.SaveAsync", $"Error guardando folio {_pesaje.FolioPesaje:D6}", ex);
+            MessageBox.Show(this, $"No se pudo guardar el pesaje:\r\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private async Task ToggleAnularAsync()

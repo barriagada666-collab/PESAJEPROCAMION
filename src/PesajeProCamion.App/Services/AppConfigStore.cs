@@ -87,14 +87,32 @@ public sealed class AppConfigStore
     }
 
     public static TicketFieldVisibility LoadTicketFields()
-        => ReadStoredConfigOrDefault().TicketFields?.Clone() ?? TicketFieldVisibility.Default;
+    {
+        try
+        {
+            return ReadStoredConfigOrDefault().TicketFields?.Clone() ?? TicketFieldVisibility.Default;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Config", "Error cargando preferencias de visualización del ticket.", ex);
+            return TicketFieldVisibility.Default;
+        }
+    }
 
     public static void SaveTicketFields(TicketFieldVisibility fields)
     {
         ArgumentNullException.ThrowIfNull(fields);
-        StoredConfig current = ReadStoredConfigOrDefault();
-        current.TicketFields = fields.Clone();
-        SaveStoredConfig(current);
+        try
+        {
+            StoredConfig current = ReadStoredConfigOrDefault();
+            current.TicketFields = fields.Clone();
+            SaveStoredConfig(current);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Config", "Error guardando preferencias de visualización del ticket.", ex);
+            throw;
+        }
     }
 
     private static StoredConfig ReadStoredConfigOrDefault()

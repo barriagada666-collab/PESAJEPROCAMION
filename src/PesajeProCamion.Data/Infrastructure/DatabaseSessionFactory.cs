@@ -22,7 +22,10 @@ public sealed record DatabaseCapabilities(
     int PasswordMaxLength,
     int ObservacionMaxLength,
     int ChoferPesajeMaxLength,
-    int UsernameMaxLength)
+    int UsernameMaxLength,
+    bool HasPesajesFardos = false,
+    bool HasTransitoFardos = false,
+    bool HasTranAnulFardos = false)
 {
     public bool IsLegacySchema => !HasAuditLog || !HasGenPesaje || !HasLogIngresoId || PasswordMaxLength < 60;
 }
@@ -87,6 +90,9 @@ public sealed class DatabaseSessionFactory
         int obsLen = await GetColumnLengthAsync(conn, "DBPESAJES", "OBSERVA1", 50, ct).ConfigureAwait(false);
         int choferLen = await GetColumnLengthAsync(conn, "DBPESAJES", "CHOFER", 12, ct).ConfigureAwait(false);
         int userLen = await GetColumnLengthAsync(conn, "DBUSUARIOS", "NOMBRE", 20, ct).ConfigureAwait(false);
+        bool hasPesajesFardos = await ColumnExistsAsync(conn, "DBPESAJES", "FARDOS", ct).ConfigureAwait(false);
+        bool hasTransitoFardos = await ColumnExistsAsync(conn, "DBTRANSITO", "FARDOS", ct).ConfigureAwait(false);
+        bool hasTranAnulFardos = await ColumnExistsAsync(conn, "DBTRAN_ANUL", "FARDOS", ct).ConfigureAwait(false);
 
         return new DatabaseCapabilities(
             HasAuditLog: hasAudit,
@@ -103,7 +109,10 @@ public sealed class DatabaseSessionFactory
             PasswordMaxLength: pwLen,
             ObservacionMaxLength: obsLen,
             ChoferPesajeMaxLength: choferLen,
-            UsernameMaxLength: userLen);
+            UsernameMaxLength: userLen,
+            HasPesajesFardos: hasPesajesFardos,
+            HasTransitoFardos: hasTransitoFardos,
+            HasTranAnulFardos: hasTranAnulFardos);
     }
 
     public async Task ExecuteInTransactionAsync(Func<FbConnection, FbTransaction, Task> action, CancellationToken ct = default)
@@ -221,6 +230,19 @@ public sealed class DatabaseSessionFactory
     {
         int idx = r.GetOrdinal(col);
         return r.IsDBNull(idx) ? fallback : Convert.ToInt32(r.GetValue(idx), CultureInfo.InvariantCulture);
+    }
+
+    public static int TryGetInt(IDataRecord r, string col, int fallback = 0)
+    {
+        ArgumentNullException.ThrowIfNull(r);
+        for (int i = 0; i < r.FieldCount; i++)
+        {
+            if (r.GetName(i).Equals(col, StringComparison.OrdinalIgnoreCase))
+            {
+                return r.IsDBNull(i) ? fallback : Convert.ToInt32(r.GetValue(i), CultureInfo.InvariantCulture);
+            }
+        }
+        return fallback;
     }
 
     public static short GetShort(IDataRecord r, string col, short fallback = 0)

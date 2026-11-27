@@ -165,17 +165,13 @@ public sealed class MainShellForm : Form
         _tabs.TabPages.AddRange([p1, p2, p3]);
         _tabs.SelectedIndexChanged += async (_, _) =>
         {
-            try
+            if (IsDisposed || Disposing) return;
+            await AppTheme.SafeLoadAsync(this, "Pestaña Activa", async () =>
             {
                 if (_tabs.SelectedIndex == 0) await _pesajeTab.RefreshTransitoAsync();
                 else if (_tabs.SelectedIndex == 1) await _gestionTab.RefreshAsync();
                 else if (_tabs.SelectedIndex == 2) await _reportsTab.GenerateAsync();
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Error("MainShell", "Error refrescando pestaña activa.", ex);
-                MessageBox.Show(this, $"Error al consultar datos:\r\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            });
         };
 
         Controls.AddRange([_tabs, _menu]);
@@ -282,6 +278,13 @@ public sealed class MainShellForm : Form
 
     private void ShowCatalog(Func<Form> factory)
     {
+        if (_services.UsuarioActual is not { Activo: true } u ||
+            (!PermissionService.EstaAutorizado(u, AccionAutorizacion.IngresarPesaje) &&
+             !PermissionService.EstaAutorizado(u, AccionAutorizacion.IngresarGestion)))
+        {
+            MessageBox.Show(this, "No posee permisos suficientes para acceder al catálogo.", "Acceso Denegado", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         using Form dlg = factory();
         dlg.ShowDialog(this);
     }
@@ -318,7 +321,10 @@ public sealed class MainShellForm : Form
         base.OnFormClosing(e);
         if (_services.UsuarioActual is not null)
         {
-            _ = _services.Security.RegistrarLogIngresoAsync(_services.UsuarioActual.Id, _services.SistemaActivoId, accionId: 2);
+            _ = _services.Security.RegistrarLogIngresoAsync(_services.UsuarioActual.Id, _services.SistemaActivoId, accionId: 2)
+                .ContinueWith(
+                    t => { if (t.IsFaulted && t.Exception is not null) AppLogger.Warn("MainShell", $"No se pudo registrar salida: {t.Exception.GetBaseException().Message}"); },
+                    TaskScheduler.Default);
         }
     }
 }
